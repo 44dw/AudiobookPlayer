@@ -5,8 +5,11 @@ import android.content.Context;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.RemoteException;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
+import android.support.v4.media.session.MediaControllerCompat;
+import android.support.v4.media.session.PlaybackStateCompat;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -46,17 +49,15 @@ public class AudioPlayerFragment extends Fragment implements AudioPlayerHandler.
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if(playerHandler == null) playerHandler = new AudioPlayerHandler(this);
     }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
-        Log.d(MainActivity.TAG, "AudioPlayerFragment -> ONCREATEVIEW");
+        Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView");
         View view = inflater.inflate(R.layout.fragment_audio_player, container, false);
         playPauseButton = view.findViewById(R.id.playPauseButton);
-        int playPauseImageRecource = (playerHandler.isPlaying() ? R.drawable.ic_pause_black_24dp
-                                                                : R.drawable.ic_play_arrow_black_24dp);
+        int playPauseImageRecource = R.drawable.ic_play_arrow_black_24dp;
         playPauseButton.setImageResource(playPauseImageRecource);
         playPauseButton.setOnClickListener(this);
         view.findViewById(R.id.skipToNextButton).setOnClickListener(this);
@@ -81,7 +82,7 @@ public class AudioPlayerFragment extends Fragment implements AudioPlayerHandler.
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
                 userIsSeeking = false;
-                playerHandler.seekTo(userSelectedPosition);
+                //playerHandler.seekTo(userSelectedPosition);
             }
         });
         //onDurationChanged(0);
@@ -136,27 +137,31 @@ public class AudioPlayerFragment extends Fragment implements AudioPlayerHandler.
         switch (v.getId()) {
             case (R.id.playPauseButton): {
                 Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> playPauseButton");
-                playerHandler.play();
+                if(MainActivity.nowPlayingFile.getValue() != null) {
+                    mActivityListener.play();
+                } else {
+                    mActivityListener.launchFileManagerFragment();
+                }
                 break;
             }
             case (R.id.skipToNextButton): {
                 Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> skipToNextButton");
-                playerHandler.skipToNext();
+                //playerHandler.skipToNext();
                 break;
             }
             case (R.id.skipToPreviousButton): {
                 Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> skipToPreviousButton");
-                playerHandler.skipToPrevious();
+                //playerHandler.skipToPrevious();
                 break;
             }
             case (R.id.rewindBackButton): {
                 Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> rewindBackButton");
-                playerHandler.rewindBack();
+                //playerHandler.rewindBack();
                 break;
             }
             case (R.id.rewindForwardButton): {
                 Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> rewindForwardButton");
-                playerHandler.rewindForward();
+                //playerHandler.rewindForward();
                 break;
             }
 

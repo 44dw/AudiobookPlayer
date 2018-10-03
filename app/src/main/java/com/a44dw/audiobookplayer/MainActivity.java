@@ -5,12 +5,19 @@ import android.app.Activity;
 import android.arch.lifecycle.LiveData;
 import android.arch.lifecycle.Observer;
 import android.arch.lifecycle.ViewModelProviders;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
+import android.os.IBinder;
+import android.os.RemoteException;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentTransaction;
+import android.support.v4.media.session.MediaControllerCompat;
+import android.support.v4.media.session.PlaybackStateCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -35,10 +42,16 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
     AudioPlayerFragment audioPlayerFragment;
     FileManagerFragment fileManagerFragment;
 
-    public LiveData<File> nowPlayingFile;
+    ServiceConnection serviceConnection;
+    public MediaControllerCompat mediaController;
+    MediaControllerCompat.Callback callback;
+    AudiobookService.AudiobookServiceBinder audiobookServiceBinder;
+
+    public static LiveData<File> nowPlayingFile;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        Log.d(MainActivity.TAG, "MA -> onCreate()");
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
@@ -46,6 +59,41 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
 
         model = ViewModelProviders.of(this).get(AudiobookViewModel.class);
         model.initializeListener(this);
+
+        callback = new MediaControllerCompat.Callback() {
+            @Override
+            public void onPlaybackStateChanged(PlaybackStateCompat state) {
+                //кодим здесь изменения в UI при измененнии статуса playback
+                Log.d(MainActivity.TAG, "MA -> onPlaybackStateChanged");
+            }
+        };
+
+        serviceConnection = new ServiceConnection() {
+            @Override
+            public void onServiceConnected(ComponentName name, IBinder service) {
+                Log.d(MainActivity.TAG, "MA -> onServiceConnected");
+                audiobookServiceBinder = (AudiobookService.AudiobookServiceBinder) service;
+                try {
+                    mediaController = new MediaControllerCompat(MainActivity.this, audiobookServiceBinder.getMediaSessionToken());
+                    mediaController.registerCallback(callback);
+                    callback.onPlaybackStateChanged(mediaController.getPlaybackState());
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            @Override
+            public void onServiceDisconnected(ComponentName name) {
+                Log.d(MainActivity.TAG, "MA -> onServiceDisconnected");
+                audiobookServiceBinder = null;
+                if(mediaController != null) {
+                    mediaController.unregisterCallback(callback);
+                    mediaController = null;
+                }
+            }
+        };
+
+        bindService(new Intent(this, AudiobookService.class), serviceConnection, BIND_AUTO_CREATE);
 
         fileManagerFragment = new FileManagerFragment();
         audioPlayerFragment = new AudioPlayerFragment();
@@ -55,6 +103,9 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
         nowPlayingFile.observe(this, new Observer<File>() {
             @Override
             public void onChanged(@Nullable File file) {
+                play();
+
+                /*
                 int returnedStatus = AudiobookViewModel.playerHandler.loadMediaAndStartPlayer(file);
                 switch (returnedStatus) {
                     case (AudiobookViewModel.STATUS_SKIP_TO_NEXT): {
@@ -79,6 +130,7 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
                         Toast.makeText(getApplicationContext(), message, Toast.LENGTH_SHORT).show();
                     }
                 }
+                */
             }
         });
     }
@@ -118,6 +170,12 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
         fragmentTransaction.replace(R.id.playerLayout, fileManagerFragment);
         fragmentTransaction.commit();
         nowFragmentStatus = SHOW_FILE_MANAGER;
+    }
+
+    @Override
+    public void play() {
+        Log.d(MainActivity.TAG, "MA -> play()");
+        mediaController.getTransportControls().play();
     }
 
     public void launchPlayerFragment() {
