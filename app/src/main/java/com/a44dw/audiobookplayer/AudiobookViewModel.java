@@ -4,32 +4,26 @@ import android.arch.lifecycle.LiveData;
 import android.arch.lifecycle.MutableLiveData;
 import android.arch.lifecycle.ViewModel;
 import android.os.Environment;
+import android.support.v4.media.session.PlaybackStateCompat;
 
 import java.io.File;
 import java.util.ArrayList;
 
 public class AudiobookViewModel extends ViewModel {
 
-    public static final int STATUS_STOP = 0;
-    public static final int STATUS_PLAY = 1;
-    public static final int STATUS_PAUSE = 2;
-    public static final int STATUS_SKIP_TO_NEXT = 3;
-    public static final int STATUS_SKIP_TO_PREVIOUS = 4;
-    public static final int STATUS_END_OF_DIR = 5;
-    public static int playerStatus = STATUS_STOP;
+    private static int playerStatus = PlaybackStateCompat.STATE_STOPPED;
 
     private static MutableLiveData<File> nowPlayingFile;
-    public static int nowPlayingMediaDuration = 0;
-    private OnIterationWithActivityListener mActivityListener;
+    private static MutableLiveData<Integer> nowPlayingMediaDuration;
+    //private OnIterationWithActivityListener mActivityListener;
 
-    static AudioPlayerHandler playerHandler;
     static FileManagerHandler fileManagerHandler;
 
     public void initializeListener(OnIterationWithActivityListener listener) {
-        mActivityListener = listener;
+        //mActivityListener = listener;
     }
 
-    public LiveData<File> getNowPlayingFile() {
+    public static LiveData<File> getNowPlayingFile() {
         if(nowPlayingFile == null) nowPlayingFile = new MutableLiveData<>();
         return nowPlayingFile;
     }
@@ -38,9 +32,24 @@ public class AudiobookViewModel extends ViewModel {
         nowPlayingFile.setValue(newFile);
     }
 
-    //вызывается из playerHandler
-    public void chooseFileToPlay() {
-        mActivityListener.launchFileManagerFragment();
+    public static LiveData<Integer> getNowPlayingMediaDuration() {
+        if(nowPlayingMediaDuration == null) nowPlayingMediaDuration = new MutableLiveData<>();
+        return nowPlayingMediaDuration;
     }
 
+    public static void updateNowPlayingMediaDuration(Integer duration) {
+        nowPlayingMediaDuration.setValue(duration);
+    }
+
+    public static int getPlayerStatus() {
+        return playerStatus;
+    }
+
+    public static void setPlayerStatus(int playerStatus) {
+        AudiobookViewModel.playerStatus = playerStatus;
+    }
+
+    public File getNextOrPrevFile() {
+        return fileManagerHandler.getNextOrPrevFile();
+    }
 }

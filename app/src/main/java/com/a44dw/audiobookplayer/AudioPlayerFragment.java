@@ -1,7 +1,11 @@
 package com.a44dw.audiobookplayer;
 
+import android.arch.lifecycle.LiveData;
 import android.arch.lifecycle.Observer;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Bundle;
@@ -19,9 +23,9 @@ import android.widget.ImageButton;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
-import static com.a44dw.audiobookplayer.AudiobookViewModel.playerHandler;
+import java.io.File;
 
-public class AudioPlayerFragment extends Fragment implements AudioPlayerHandler.OnAudioPlayerIterationWithFragmentListener,
+public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlaybackStateChangedListener,
                                                              View.OnClickListener {
 
     static ImageButton playPauseButton;
@@ -29,7 +33,9 @@ public class AudioPlayerFragment extends Fragment implements AudioPlayerHandler.
     TextView progressTextView;
     boolean userIsSeeking = false;
     OnIterationWithActivityListener mActivityListener;
-
+    MediaControllerCompat mediaController;
+    public static LiveData<Integer> nowPlayingMediaDuration;
+    private SeekbarBroadReceiver seekbarReceiver;
 
     public AudioPlayerFragment() {
         // Required empty public constructor
@@ -49,6 +55,14 @@ public class AudioPlayerFragment extends Fragment implements AudioPlayerHandler.
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        //получаем контроллер для взаимодействия с MediaSession
+        mediaController = mActivityListener.getMediaControllerCompat();
+
+        //регистрируем ресивер для получения информации о прогрессе песни
+        IntentFilter filter = new IntentFilter(MainActivity.seekBarBroadcastName);
+        seekbarReceiver = new SeekbarBroadReceiver();
+        getContext().registerReceiver(seekbarReceiver, filter);
     }
 
     @Override
@@ -57,7 +71,9 @@ public class AudioPlayerFragment extends Fragment implements AudioPlayerHandler.
         Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView");
         View view = inflater.inflate(R.layout.fragment_audio_player, container, false);
         playPauseButton = view.findViewById(R.id.playPauseButton);
-        int playPauseImageRecource = R.drawable.ic_play_arrow_black_24dp;
+        int playPauseImageRecource = (AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PLAYING
+                                     ? R.drawable.ic_pause_black_24dp
+                                     : R.drawable.ic_play_arrow_black_24dp);
         playPauseButton.setImageResource(playPauseImageRecource);
         playPauseButton.setOnClickListener(this);
         view.findViewById(R.id.skipToNextButton).setOnClickListener(this);
@@ -82,11 +98,18 @@ public class AudioPlayerFragment extends Fragment implements AudioPlayerHandler.
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
                 userIsSeeking = false;
-                //playerHandler.seekTo(userSelectedPosition);
+                mediaController.getTransportControls().seekTo((long) userSelectedPosition);
             }
         });
-        //onDurationChanged(0);
-        onDurationChanged(AudiobookViewModel.nowPlayingMediaDuration);
+
+        nowPlayingMediaDuration = AudiobookViewModel.getNowPlayingMediaDuration();
+        nowPlayingMediaDuration.observe(this, new Observer<Integer>() {
+            @Override
+            public void onChanged(@Nullable Integer duration) {
+                Log.d(MainActivity.TAG, "AudioPlayerFragment -> nowPlayingMediaDuration -> onChanged(): duration: " + duration);
+                onDurationChanged(duration);
+            }
+        });
 
         return view;
     }
@@ -97,39 +120,20 @@ public class AudioPlayerFragment extends Fragment implements AudioPlayerHandler.
     }
 
     @Override
+    public void onDestroy() {
+        getContext().unregisterReceiver(seekbarReceiver);
+        super.onDestroy();
+    }
+
+    @Override
     public void onDetach() {
         super.onDetach();
     }
 
-    @Override
-    public void onLaunchPlayer() {
-        Log.d(MainActivity.TAG, "AudioPlayerFragment -> onLaunchPlayer");
-        playPauseButton.setImageResource(R.drawable.ic_pause_black_24dp);
-    }
-
-    @Override
-    public void onStopPlayer() {
-        Log.d(MainActivity.TAG, "AudioPlayerFragment -> onStopPlayer");
-        playPauseButton.setImageResource(R.drawable.ic_play_arrow_black_24dp);
-    }
-
-    @Override
     public void onDurationChanged(int duration) {
-        Log.d(MainActivity.TAG, "AudioPlayerFragment -> onDurationChanged: set max to " + duration);
         seekBar.setMax(duration);
         seekBar.setProgress(0);
         Log.d(MainActivity.TAG, "AudioPlayerFragment -> onDurationChanged: the max of seekBar is " + seekBar.getMax());
-    }
-
-    @Override
-    public void onPositionChanged(int position) {
-        if(!userIsSeeking) {
-            Log.d(MainActivity.TAG, "AudioPlayerFragment -> onPositionChanged: set position to " + position);
-            //if(seekBar.getMax() == 0) seekBar.setMax(AudiobookViewModel.nowPlayingMediaDuration);
-            Log.d(MainActivity.TAG, "AudioPlayerFragment -> onPositionChanged: getMax: " + seekBar.getMax());
-            seekBar.setProgress(position);
-            progressTextView.setText("position is " + String.valueOf(position));
-        }
     }
 
     @Override
@@ -137,34 +141,61 @@ public class AudioPlayerFragment extends Fragment implements AudioPlayerHandler.
         switch (v.getId()) {
             case (R.id.playPauseButton): {
                 Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> playPauseButton");
-                if(MainActivity.nowPlayingFile.getValue() != null) {
-                    mActivityListener.play();
+                if(AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PLAYING) {
+                    mediaController.getTransportControls().pause();
                 } else {
-                    mActivityListener.launchFileManagerFragment();
+                    if(AudiobookViewModel.getNowPlayingFile().getValue() != null) {
+                        mediaController.getTransportControls().play();
+                    } else {
+                        mActivityListener.launchFileManagerFragment();
+                    }
                 }
                 break;
             }
             case (R.id.skipToNextButton): {
                 Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> skipToNextButton");
-                //playerHandler.skipToNext();
+                mediaController.getTransportControls().skipToNext();
                 break;
             }
             case (R.id.skipToPreviousButton): {
                 Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> skipToPreviousButton");
-                //playerHandler.skipToPrevious();
+                mediaController.getTransportControls().skipToPrevious();
                 break;
             }
             case (R.id.rewindBackButton): {
                 Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> rewindBackButton");
-                //playerHandler.rewindBack();
+                mediaController.getTransportControls().sendCustomAction("rewindBack", null);
                 break;
             }
             case (R.id.rewindForwardButton): {
                 Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> rewindForwardButton");
-                //playerHandler.rewindForward();
+                mediaController.getTransportControls().sendCustomAction("rewindForward", null);
                 break;
             }
 
+        }
+    }
+
+    //вызывается из МА при запуске плеера
+    @Override
+    public void onPlayMedia() {
+        playPauseButton.setImageResource(R.drawable.ic_pause_black_24dp);
+    }
+
+    @Override
+    public void onPauseMedia() {
+        playPauseButton.setImageResource(R.drawable.ic_play_arrow_black_24dp);
+    }
+
+
+    public class SeekbarBroadReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if(!userIsSeeking) {
+                int position = intent.getIntExtra(MainActivity.playbackStatus, 0);
+                seekBar.setProgress(position);
+                progressTextView.setText("position is " + String.valueOf(position));
+            }
         }
     }
 }

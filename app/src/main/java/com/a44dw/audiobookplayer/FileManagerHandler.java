@@ -1,14 +1,13 @@
 package com.a44dw.audiobookplayer;
 
 import android.os.Environment;
+import android.support.v4.media.session.PlaybackStateCompat;
 import android.util.Log;
 import android.view.View;
 
 import java.io.File;
 import java.util.ArrayList;
 
-import static com.a44dw.audiobookplayer.AudiobookViewModel.STATUS_SKIP_TO_NEXT;
-import static com.a44dw.audiobookplayer.AudiobookViewModel.STATUS_SKIP_TO_PREVIOUS;
 import static com.a44dw.audiobookplayer.MainActivity.model;
 
 public class FileManagerHandler implements FileManagerAdapter.OnItemClickListener {
@@ -26,12 +25,12 @@ public class FileManagerHandler implements FileManagerAdapter.OnItemClickListene
     }
 
     public File getNextOrPrevFile() {
-        File nowPlayingFile = model.getNowPlayingFile().getValue();
+        File nowPlayingFile = AudiobookViewModel.getNowPlayingFile().getValue();
         File directory = pathToCurrentDirectory.get(pathToCurrentDirectory.size() - 1);
         File[] filesInDirectory = directory.listFiles();
         boolean find = false;
-        switch (AudiobookViewModel.playerStatus) {
-            case STATUS_SKIP_TO_PREVIOUS: {
+        switch (AudiobookViewModel.getPlayerStatus()) {
+            case PlaybackStateCompat.STATE_SKIPPING_TO_PREVIOUS: {
                 Log.d(MainActivity.TAG, "FileManagerHandler -> getNextOrPrevFile(): search for prev");
                 for(int i = filesInDirectory.length-1; i>=0; i--) {
                     if(find) {
@@ -42,7 +41,7 @@ public class FileManagerHandler implements FileManagerAdapter.OnItemClickListene
                 }
                 break;
             }
-            case STATUS_SKIP_TO_NEXT: {
+            case PlaybackStateCompat.STATE_SKIPPING_TO_NEXT: {
                 Log.d(MainActivity.TAG, "FileManagerHandler -> getNextOrPrevFile(): search for next");
                 for(File f : filesInDirectory) {
                     if(find) {
@@ -53,6 +52,7 @@ public class FileManagerHandler implements FileManagerAdapter.OnItemClickListene
                 }
             }
             break;
+            default: Log.d(MainActivity.TAG, "FileManagerHandler -> getNextOrPrevFile(): default: playerStatus " + AudiobookViewModel.getPlayerStatus());
         }
         return null;
     }

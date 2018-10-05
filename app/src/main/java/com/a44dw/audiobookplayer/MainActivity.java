@@ -3,7 +3,6 @@ package com.a44dw.audiobookplayer;
 import android.Manifest;
 import android.app.Activity;
 import android.arch.lifecycle.LiveData;
-import android.arch.lifecycle.Observer;
 import android.arch.lifecycle.ViewModelProviders;
 import android.content.ComponentName;
 import android.content.Intent;
@@ -11,7 +10,6 @@ import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.os.IBinder;
 import android.os.RemoteException;
-import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentManager;
@@ -28,26 +26,34 @@ import java.io.File;
 public class MainActivity extends AppCompatActivity implements OnIterationWithActivityListener {
 
     static final String TAG = "myDebugTag";
-    public static final int SHOW_MEDIA_PLAYER = 1;
-    public static final int SHOW_FILE_MANAGER = 2;
-    public static int nowFragmentStatus;
-    static AudiobookViewModel model;
+
+    //разрешения и всё, что с ними связано
     private static final int REQUEST_EXTERNAL_STORAGE = 1;
     private static String[] PERMISSIONS_STORAGE = {
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE
     };
 
-    FragmentTransaction fragmentTransaction;
-    AudioPlayerFragment audioPlayerFragment;
-    FileManagerFragment fileManagerFragment;
-
+    //классы сервиса/медиа-контроллера
     ServiceConnection serviceConnection;
-    public MediaControllerCompat mediaController;
+    MediaControllerCompat mediaController;
     MediaControllerCompat.Callback callback;
     AudiobookService.AudiobookServiceBinder audiobookServiceBinder;
 
+    //фрагменты и всё, что с ними связано
+    FragmentTransaction fragmentTransaction;
+    FileManagerFragment fileManagerFragment;
+    AudioPlayerFragment audioPlayerFragment;
+    OnPlaybackStateChangedListener playbackStateChangedListener;
+    public static int nowFragmentStatus;
+    public static final int SHOW_MEDIA_PLAYER = 1;
+    public static final int SHOW_FILE_MANAGER = 2;
+    public static final String seekBarBroadcastName = "seekBarBroadcastName";
+    public static final String playbackStatus = "playbackStatus";
+
+    //ViewModel и всё, что с ней связано
     public static LiveData<File> nowPlayingFile;
+    static AudiobookViewModel model;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -55,16 +61,38 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        //проверяем разрешения
         verifyPermissions(this);
 
-        model = ViewModelProviders.of(this).get(AudiobookViewModel.class);
-        model.initializeListener(this);
-
+        //прикрепляем сервис и настраиваем медиа-контроллер
         callback = new MediaControllerCompat.Callback() {
             @Override
             public void onPlaybackStateChanged(PlaybackStateCompat state) {
-                //кодим здесь изменения в UI при измененнии статуса playback
-                Log.d(MainActivity.TAG, "MA -> onPlaybackStateChanged");
+                if(state != null) {
+                    int nowState = state.getState();
+                    AudiobookViewModel.setPlayerStatus(nowState);
+                    switch (nowState) {
+                        case (PlaybackStateCompat.STATE_PLAYING): {
+                            Log.d(MainActivity.TAG, "MA -> onPlaybackStateChanged: STATE_PLAYING");
+                            if(nowFragmentStatus == SHOW_FILE_MANAGER) launchPlayerFragment();
+                            playbackStateChangedListener.onPlayMedia();
+                            break;
+                        }
+                        case (PlaybackStateCompat.STATE_PAUSED): {
+                            Log.d(MainActivity.TAG, "MA -> onPlaybackStateChanged: STATE_PAUSED");
+                            playbackStateChangedListener.onPauseMedia();
+                            break;
+                        }
+                        case (PlaybackStateCompat.STATE_SKIPPING_TO_PREVIOUS):
+                        case (PlaybackStateCompat.STATE_SKIPPING_TO_NEXT): {
+                            Log.d(MainActivity.TAG, "MA -> onPlaybackStateChanged: STATE_SKIPPING_TO_NEXT/PREVIOUS");
+                            //запрашиваем новый файл
+                            File newFile = model.getNextOrPrevFile();
+                            model.updateNowPlayingFile(newFile);
+                            break;
+                        }
+                    }
+                }
             }
         };
 
@@ -95,44 +123,23 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
 
         bindService(new Intent(this, AudiobookService.class), serviceConnection, BIND_AUTO_CREATE);
 
+        //инициализация фрагментов
         fileManagerFragment = new FileManagerFragment();
         audioPlayerFragment = new AudioPlayerFragment();
+        playbackStateChangedListener = audioPlayerFragment;
         launchPlayerFragment();
 
-        nowPlayingFile = model.getNowPlayingFile();
+        //настраиваем модель
+        model = ViewModelProviders.of(this).get(AudiobookViewModel.class);
+        model.initializeListener(this);
+        /*
+        nowPlayingFile = AudiobookViewModel.getNowPlayingFile();
         nowPlayingFile.observe(this, new Observer<File>() {
             @Override
             public void onChanged(@Nullable File file) {
-                play();
-
-                /*
-                int returnedStatus = AudiobookViewModel.playerHandler.loadMediaAndStartPlayer(file);
-                switch (returnedStatus) {
-                    case (AudiobookViewModel.STATUS_SKIP_TO_NEXT): {
-                        Log.d(MainActivity.TAG, "MA -> nowPlayingFile.observe: onChanged -> STATUS_SKIP_TO_NEXT");
-                        AudiobookViewModel.playerHandler.skipToNext();
-                        break;
-                    }
-                    case (AudiobookViewModel.STATUS_SKIP_TO_PREVIOUS): {
-                        Log.d(MainActivity.TAG, "MA -> nowPlayingFile.observe: onChanged -> STATUS_SKIP_TO_PREVIOUS");
-                        AudiobookViewModel.playerHandler.skipToPrevious();
-                        break;
-                    }
-                    case (AudiobookViewModel.STATUS_PLAY): {
-                        Log.d(MainActivity.TAG, "MA -> nowPlayingFile.observe: onChanged -> STATUS_PLAY");
-                        if(nowFragmentStatus == SHOW_FILE_MANAGER) launchPlayerFragment();
-                        break;
-                    }
-                    default: {
-                        Log.d(MainActivity.TAG, "MA -> nowPlayingFile.observe: onChanged -> making toast");
-                        String message = (returnedStatus == AudiobookViewModel.STATUS_END_OF_DIR ? "достигнут конец каталога"
-                                                                                                 : "неверный формат файла");
-                        Toast.makeText(getApplicationContext(), message, Toast.LENGTH_SHORT).show();
-                    }
-                }
-                */
             }
         });
+        */
     }
 
     public static void verifyPermissions(Activity activity) {
@@ -164,6 +171,7 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
         }
     }
 
+    @Override
     public void launchFileManagerFragment() {
         Log.d(MainActivity.TAG, "MA -> launchFileManagerFragment()");
         fragmentTransaction = getSupportFragmentManager().beginTransaction();
@@ -173,9 +181,8 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
     }
 
     @Override
-    public void play() {
-        Log.d(MainActivity.TAG, "MA -> play()");
-        mediaController.getTransportControls().play();
+    public MediaControllerCompat getMediaControllerCompat() {
+        return mediaController;
     }
 
     public void launchPlayerFragment() {
@@ -184,10 +191,14 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
         fragmentTransaction.replace(R.id.playerLayout, audioPlayerFragment);
         fragmentTransaction.commit();
         nowFragmentStatus = SHOW_MEDIA_PLAYER;
-        if(audioPlayerFragment.seekBar != null) audioPlayerFragment.onDurationChanged(AudiobookViewModel.nowPlayingMediaDuration);
     }
 
     public interface OnBackPressedListener {
         public void onBackPressed();
+    }
+
+    public interface OnPlaybackStateChangedListener {
+        void onPlayMedia();
+        void onPauseMedia();
     }
 }

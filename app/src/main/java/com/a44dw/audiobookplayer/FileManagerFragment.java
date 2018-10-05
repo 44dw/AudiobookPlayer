@@ -1,6 +1,9 @@
 package com.a44dw.audiobookplayer;
 
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Bundle;
 import android.support.v4.app.Fragment;
 import android.support.v7.widget.DividerItemDecoration;
@@ -42,7 +45,6 @@ public class FileManagerFragment extends Fragment implements FileManagerHandler.
             pathToCurrentDirectory = new ArrayList<>();
             pathToCurrentDirectory.add(fileManagerHandler.goToRoot());
         }
-
     }
 
     @Override

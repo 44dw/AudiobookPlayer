@@ -2,6 +2,10 @@ package com.a44dw.audiobookplayer;
 
 import android.app.PendingIntent;
 import android.app.Service;
+import android.arch.lifecycle.LifecycleOwner;
+import android.arch.lifecycle.LifecycleService;
+import android.arch.lifecycle.LiveData;
+import android.arch.lifecycle.Observer;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.BitmapFactory;
@@ -11,7 +15,9 @@ import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.os.Binder;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.IBinder;
+import android.support.annotation.Nullable;
 import android.support.v4.media.MediaMetadataCompat;
 import android.support.v4.media.session.MediaButtonReceiver;
 import android.support.v4.media.session.MediaSessionCompat;
@@ -20,23 +26,23 @@ import android.util.Log;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
-import static com.a44dw.audiobookplayer.AudiobookViewModel.STATUS_END_OF_DIR;
-import static com.a44dw.audiobookplayer.AudiobookViewModel.STATUS_PAUSE;
-import static com.a44dw.audiobookplayer.AudiobookViewModel.STATUS_PLAY;
-import static com.a44dw.audiobookplayer.AudiobookViewModel.STATUS_SKIP_TO_NEXT;
-import static com.a44dw.audiobookplayer.AudiobookViewModel.STATUS_SKIP_TO_PREVIOUS;
-import static com.a44dw.audiobookplayer.AudiobookViewModel.STATUS_STOP;
-import static com.a44dw.audiobookplayer.AudiobookViewModel.fileManagerHandler;
-import static com.a44dw.audiobookplayer.AudiobookViewModel.playerStatus;
+import static com.a44dw.audiobookplayer.MainActivity.model;
 
-public class AudiobookService extends Service {
+public class AudiobookService extends LifecycleService {
 
     private MediaSessionCompat mediaSession;
     private AudioManager audioManager;
     private AudioFocusRequest audioFocusRequest;
-    private boolean audioFocusRequested = false;
     private PlayerHandler playerHandler;
+
+    public static final int POSITION_REFRESH_INTERVAL = 1000;
+    private boolean audioFocusRequested = false;
+    private boolean serviceIsStarted = false;
+    public static LiveData<File> nowPlayingFile;
 
     //формирует метадату треков
     private final MediaMetadataCompat.Builder metadataBuilder = new MediaMetadataCompat.Builder();
@@ -86,11 +92,21 @@ public class AudiobookService extends Service {
         mediaSession.setMediaButtonReceiver(PendingIntent.getBroadcast(appCtx, 0, mediaButtonIntent, 0));
 
         playerHandler = new PlayerHandler();
+
+        nowPlayingFile = AudiobookViewModel.getNowPlayingFile();
+        nowPlayingFile.observe(this, new Observer<File>() {
+            @Override
+            public void onChanged(@Nullable File file) {
+                Log.d(MainActivity.TAG, "Service -> onChanged nowPlayingFile: " + file.toString());
+                mediaSessionCallback.onPlay();
+            }
+        });
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(MainActivity.TAG, "Service -> onStartCommand()");
+        serviceIsStarted = true;
         //ловит события (нажатия на кнопки) с внешних источников и передаёт их в MediaSessionCompat
         MediaButtonReceiver.handleIntent(mediaSession, intent);
         return super.onStartCommand(intent, flags, startId);
@@ -106,15 +122,31 @@ public class AudiobookService extends Service {
 
     private MediaSessionCompat.Callback mediaSessionCallback = new MediaSessionCompat.Callback() {
 
-        int currentState = PlaybackStateCompat.STATE_STOPPED;
+        //возможно будет достаточно state в model???
+        //int currentState = PlaybackStateCompat.STATE_STOPPED;
 
         @Override
         public void onPlay() {
             Log.d(MainActivity.TAG, "Service -> onPlay()");
-            //нужна проверка, стартовал ли уже сервис?
-            startService(new Intent(getApplicationContext(), AudiobookService.class));
+            //нужна проверка, стартовал ли уже сервис? Пока что вызывается при каждом новом файле
+            if (!serviceIsStarted) startService(new Intent(getApplicationContext(), AudiobookService.class));
 
             playerHandler.play();
+
+            //если файл не подходит по формату...
+            if(!playerHandler.isPlaying()) {
+                Log.d(MainActivity.TAG, "Service -> onPlay() -> !playerHandler.isPlaying(): now status is " + AudiobookViewModel.getPlayerStatus());
+                switch (AudiobookViewModel.getPlayerStatus()) {
+                    case PlaybackStateCompat.STATE_SKIPPING_TO_NEXT: {
+                        onSkipToNext();
+                        break;
+                    }
+                    case PlaybackStateCompat.STATE_SKIPPING_TO_PREVIOUS: {
+                        onSkipToPrevious();
+                        break;
+                    }
+                }
+            }
 
             if(!audioFocusRequested) {
                 Log.d(MainActivity.TAG, "Service -> onPlay() -> request audio focus");
@@ -131,36 +163,92 @@ public class AudiobookService extends Service {
                 audioFocusRequested = true;
             }
             mediaSession.setActive(true);
-
             mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_PLAYING,
                                                                 PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
                                                                 1).build());
-            currentState = PlaybackStateCompat.STATE_PLAYING;
+            //currentState = PlaybackStateCompat.STATE_PLAYING;
+            playerHandler.startUpdatingCallbackWithPosition();
         }
 
         @Override
         public void onPause() {
-            super.onPause();
+            playerHandler.pause();
+            mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_PAUSED,
+                                                                PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
+                                                                1).build());
+            //currentState = PlaybackStateCompat.STATE_PAUSED;
         }
 
         @Override
         public void onSkipToNext() {
-            super.onSkipToNext();
+            playerHandler.stop();
+            //меняем статус
+            //если предыдущий файл не прочитался, статус меняется ещё раз на STATE_SKIPPING_TO_NEXT, зато в
+            //МА -> onPlaybackStateChanged запускаются нужные методы
+            mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_SKIPPING_TO_NEXT,
+                    PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
+                    1).build());
         }
 
         @Override
         public void onSkipToPrevious() {
-            super.onSkipToPrevious();
+            playerHandler.stop();
+            mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_SKIPPING_TO_PREVIOUS,
+                    PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
+                    1).build());
+        }
+
+        @Override
+        public void onRewind() {
+            playerHandler.rewindBack();
         }
 
         @Override
         public void onStop() {
             super.onStop();
+
+            if(audioFocusRequested) audioFocusRequested = false;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioManager.abandonAudioFocusRequest(audioFocusRequest);
+            } else {
+                audioManager.abandonAudioFocus(audioFocusChangeListener);
+            }
+
+            mediaSession.setActive(false);
+
+            mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_STOPPED,
+                                          PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
+                                          1).build());
+            //currentState = PlaybackStateCompat.STATE_STOPPED;
+
+            serviceIsStarted = false;
+            stopSelf();
+        }
+
+        @Override
+        public void onSeekTo(long newPosition) {
+            playerHandler.seekTo(newPosition);
+        }
+
+        @Override
+        public void onCustomAction(String action, Bundle extras) {
+            switch (action) {
+                case "rewindForward": {
+                    playerHandler.rewindForward();
+                    break;
+                }
+                case "rewindBack": {
+                    playerHandler.rewindBack();
+                    break;
+                }
+            }
         }
     };
 
     @Override
     public IBinder onBind(Intent intent) {
+        super.onBind(intent);
         Log.d(MainActivity.TAG, "Service -> onBind()");
         return new AudiobookServiceBinder();
     }
@@ -192,32 +280,36 @@ public class AudiobookService extends Service {
     private class PlayerHandler {
 
         private MediaPlayer player;
+        //для обновления SeekBar в audioPlayerFragment
+        private ScheduledExecutorService mExecutor;
+        private Runnable mSeekbarPositionUpdateTask;
 
         public void play() {
-            Log.d(MainActivity.TAG, "AudioPlayerHandler -> play()");
-            loadMediaAndStartPlayer(MainActivity.nowPlayingFile.getValue());
+            Log.d(MainActivity.TAG, "PlayerHandler -> play()");
+            if(AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PAUSED) resume();
+            else loadMediaAndStartPlayer(nowPlayingFile.getValue());
         }
 
         public void loadMediaAndStartPlayer(File media) {
-            Log.d(MainActivity.TAG, "AudioPlayerHandler -> loadMediaAndStartPlayer: load file");
+            Log.d(MainActivity.TAG, "PlayerHandler -> loadMediaAndStartPlayer: load file");
             loadMedia(media);
             player.start();
+            if(isPlaying()) AudiobookViewModel.updateNowPlayingMediaDuration(player.getDuration());
         }
 
         private void loadMedia(File media) {
             if(player == null)initializeMediaPlayer();
             try {
                 player.setDataSource(media.toString());
-                Log.d(MainActivity.TAG, "AudioPlayerHandler -> loadMedia(): loaded media name " + media);
+                Log.d(MainActivity.TAG, "PlayerHandler -> loadMedia(): loaded media name " + media);
                 player.prepare();
-                AudiobookViewModel.nowPlayingMediaDuration = player.getDuration();
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
 
         private void initializeMediaPlayer() {
-            Log.d(MainActivity.TAG, "AudioPlayerHandler -> initializeMediaPlayer()");
+            Log.d(MainActivity.TAG, "PlayerHandler -> initializeMediaPlayer()");
             player = new MediaPlayer();
         }
 
@@ -225,62 +317,80 @@ public class AudiobookService extends Service {
             return player != null && player.isPlaying();
         }
 
+        public int getCurrentPosition() {
+            Log.d(MainActivity.TAG, "PlayerHandler -> getCurrentPosition()");
+            int currentPosition = 0;
+            if(isPlaying()) currentPosition = player.getCurrentPosition();
+            return currentPosition;
+        }
+
         private void pause() {
-            Log.d(MainActivity.TAG, "AudioPlayerHandler -> pause()");
+            Log.d(MainActivity.TAG, "PlayerHandler -> pause()");
+            stopUpdatingCallbackWithPosition();
             player.pause();
-            AudiobookViewModel.playerStatus = STATUS_PAUSE;
         }
 
         private void resume() {
-            Log.d(MainActivity.TAG, "AudioPlayerHandler -> resume()");
+            Log.d(MainActivity.TAG, "PlayerHandler -> resume()");
             player.start();
-            AudiobookViewModel.playerStatus = STATUS_PLAY;
         }
 
         private void stop() {
-            Log.d(MainActivity.TAG, "AudioPlayerHandler -> stop()");
-            player.stop();
+            Log.d(MainActivity.TAG, "PlayerHandler -> stop()");
+            stopUpdatingCallbackWithPosition();
+            if(isPlaying()) player.stop();
             player.reset();
-            AudiobookViewModel.playerStatus = STATUS_STOP;
-        }
-
-        public void skipToNext() {
-            Log.d(MainActivity.TAG, "AudioPlayerHandler -> skipToNext()");
-            if(isPlaying()) stop();
-            AudiobookViewModel.playerStatus = STATUS_SKIP_TO_NEXT;
-            File newFile = fileManagerHandler.getNextOrPrevFile();
-            MainActivity.model.updateNowPlayingFile(newFile);
-        }
-
-        public void skipToPrevious() {
-            int playerPosition = player.getCurrentPosition();
-            if(playerPosition > 5*1000) {
-                Log.d(MainActivity.TAG, "AudioPlayerHandler -> skipToPrevious(): restarting player");
-                player.pause();
-                player.seekTo(0);
-                player.start();
-            } else {
-                Log.d(MainActivity.TAG, "AudioPlayerHandler -> skipToPrevious(): start previous composition");
-                stop();
-                AudiobookViewModel.playerStatus = STATUS_SKIP_TO_PREVIOUS;
-                File prevFile = fileManagerHandler.getNextOrPrevFile();
-                MainActivity.model.updateNowPlayingFile(prevFile);
-            }
         }
 
         public void rewindBack() {
-            Log.d(MainActivity.TAG, "AudioPlayerHandler -> rewindBack()");
+            Log.d(MainActivity.TAG, "PlayerHandler -> rewindBack()");
             int playerPosition = player.getCurrentPosition();
             int newPosition = playerPosition - 5*1000;
             player.seekTo(newPosition > 0 ? newPosition : 0);
         }
 
         public void rewindForward() {
-            Log.d(MainActivity.TAG, "AudioPlayerHandler -> rewindForward()");
+            Log.d(MainActivity.TAG, "PlayerHandler -> rewindForward()");
             int playerPosition = player.getCurrentPosition();
             int newPosition = playerPosition + 5*1000;
-            if(newPosition > player.getDuration()) skipToNext();
+            if(newPosition > player.getDuration()) mediaSessionCallback.onSkipToNext();
             else player.seekTo(newPosition);
+        }
+
+        public void seekTo(long newPosition) {
+            Log.d(MainActivity.TAG, "PlayerHandler -> seekTo()");
+            if(player != null) player.seekTo((int)newPosition);
+        }
+
+        //Обновление seekBar в AudioFragment
+        private void startUpdatingCallbackWithPosition() {
+            Log.d(MainActivity.TAG, "PlayerHandler -> startUpdatingCallbackWithPosition()");
+            if(mExecutor == null) mExecutor = Executors.newSingleThreadScheduledExecutor();
+            if(mSeekbarPositionUpdateTask == null) mSeekbarPositionUpdateTask = new Runnable() {
+                @Override
+                public void run() {
+                    updateProgressCallbackTask();
+                }
+            };
+            mExecutor.scheduleAtFixedRate(mSeekbarPositionUpdateTask, 0, POSITION_REFRESH_INTERVAL, TimeUnit.MILLISECONDS);
+        }
+
+        private void stopUpdatingCallbackWithPosition() {
+            if(mExecutor != null) {
+                mExecutor.shutdownNow();
+                mExecutor = null;
+                mSeekbarPositionUpdateTask = null;
+            }
+        }
+
+        private void updateProgressCallbackTask() {
+            if(playerHandler.isPlaying()) {
+                Log.d(MainActivity.TAG, "AudioPlayerHandler -> updateProgressCallbackTask()");
+                Intent broadcastIntent = new Intent();
+                broadcastIntent.putExtra(MainActivity.playbackStatus, playerHandler.getCurrentPosition());
+                broadcastIntent.setAction(MainActivity.seekBarBroadcastName);
+                sendBroadcast(broadcastIntent);
+            }
         }
     }
 }
