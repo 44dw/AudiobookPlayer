@@ -1,5 +1,8 @@
 package com.a44dw.audiobookplayer;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.arch.lifecycle.LifecycleOwner;
@@ -18,6 +21,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.support.annotation.Nullable;
+import android.support.v4.app.NotificationCompat;
+import android.support.v4.app.NotificationManagerCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v4.media.MediaMetadataCompat;
 import android.support.v4.media.session.MediaButtonReceiver;
 import android.support.v4.media.session.MediaSessionCompat;
@@ -40,6 +46,9 @@ public class AudiobookService extends LifecycleService {
     private PlayerHandler playerHandler;
 
     public static final int POSITION_REFRESH_INTERVAL = 1000;
+    private static final int NOTIFICATION_ID = 700;
+    private final String NOTIFICATION_CHANNEL_ID = "audio_book";
+
     private boolean audioFocusRequested = false;
     private boolean serviceIsStarted = false;
     public static LiveData<File> nowPlayingFile;
@@ -54,6 +63,8 @@ public class AudiobookService extends LifecycleService {
                     | PlaybackStateCompat.ACTION_PLAY_PAUSE
                     | PlaybackStateCompat.ACTION_SKIP_TO_NEXT
                     | PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
+                    | PlaybackStateCompat.ACTION_REWIND
+                    | PlaybackStateCompat.ACTION_FAST_FORWARD
     );
 
 
@@ -63,6 +74,15 @@ public class AudiobookService extends LifecycleService {
         super.onCreate();
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Log.d(MainActivity.TAG, "Service -> onCreate() -> >= Build.VERSION_CODES.O");
+            String channelName = getString(R.string.audiobook_notification_channel);
+
+            NotificationChannel notificationChannel = new NotificationChannel(NOTIFICATION_CHANNEL_ID,
+                                                                              channelName,
+                                                                              NotificationManager.IMPORTANCE_DEFAULT);
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            notificationManager.createNotificationChannel(notificationChannel);
+
             AudioAttributes audioAttributes = new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
@@ -70,7 +90,7 @@ public class AudiobookService extends LifecycleService {
             audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                     .setOnAudioFocusChangeListener(audioFocusChangeListener)
                     .setAcceptsDelayedFocusGain(false)
-                    .setWillPauseWhenDucked(true)
+                    //.setWillPauseWhenDucked(true)
                     .setAudioAttributes(audioAttributes)
                     .build();
         }
@@ -122,9 +142,6 @@ public class AudiobookService extends LifecycleService {
 
     private MediaSessionCompat.Callback mediaSessionCallback = new MediaSessionCompat.Callback() {
 
-        //возможно будет достаточно state в model???
-        //int currentState = PlaybackStateCompat.STATE_STOPPED;
-
         @Override
         public void onPlay() {
             Log.d(MainActivity.TAG, "Service -> onPlay()");
@@ -154,7 +171,10 @@ public class AudiobookService extends LifecycleService {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     audioFocusResult = audioManager.requestAudioFocus(audioFocusRequest);
                 } else {
-                    audioFocusResult = audioManager.requestAudioFocus(audioFocusChangeListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+                    audioFocusResult = audioManager.requestAudioFocus(
+                            audioFocusChangeListener,
+                            AudioManager.STREAM_MUSIC,
+                            AudioManager.AUDIOFOCUS_GAIN);
                 }
                 if (audioFocusResult != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
                     Log.d(MainActivity.TAG, "Service -> onPlay() -> request audio focus: unsuccessful");
@@ -166,8 +186,9 @@ public class AudiobookService extends LifecycleService {
             mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_PLAYING,
                                                                 PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
                                                                 1).build());
-            //currentState = PlaybackStateCompat.STATE_PLAYING;
             playerHandler.startUpdatingCallbackWithPosition();
+
+            doNotificetionOperation(PlaybackStateCompat.STATE_PLAYING);
         }
 
         @Override
@@ -176,7 +197,7 @@ public class AudiobookService extends LifecycleService {
             mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_PAUSED,
                                                                 PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
                                                                 1).build());
-            //currentState = PlaybackStateCompat.STATE_PAUSED;
+            doNotificetionOperation(PlaybackStateCompat.STATE_PAUSED);
         }
 
         @Override
@@ -188,6 +209,7 @@ public class AudiobookService extends LifecycleService {
             mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_SKIPPING_TO_NEXT,
                     PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
                     1).build());
+
         }
 
         @Override
@@ -199,8 +221,19 @@ public class AudiobookService extends LifecycleService {
         }
 
         @Override
+        public void onFastForward() {
+            playerHandler.rewindForward();
+            mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_REWINDING,
+                    PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
+                    1).build());
+        }
+
+        @Override
         public void onRewind() {
             playerHandler.rewindBack();
+            mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_REWINDING,
+                    PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
+                    1).build());
         }
 
         @Override
@@ -214,14 +247,12 @@ public class AudiobookService extends LifecycleService {
             } else {
                 audioManager.abandonAudioFocus(audioFocusChangeListener);
             }
-
             mediaSession.setActive(false);
-
             mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_STOPPED,
                                           PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
                                           1).build());
             //currentState = PlaybackStateCompat.STATE_STOPPED;
-
+            doNotificetionOperation(PlaybackStateCompat.STATE_STOPPED);
             serviceIsStarted = false;
             stopSelf();
         }
@@ -229,20 +260,6 @@ public class AudiobookService extends LifecycleService {
         @Override
         public void onSeekTo(long newPosition) {
             playerHandler.seekTo(newPosition);
-        }
-
-        @Override
-        public void onCustomAction(String action, Bundle extras) {
-            switch (action) {
-                case "rewindForward": {
-                    playerHandler.rewindForward();
-                    break;
-                }
-                case "rewindBack": {
-                    playerHandler.rewindBack();
-                    break;
-                }
-            }
         }
     };
 
@@ -277,6 +294,74 @@ public class AudiobookService extends LifecycleService {
         }
     };
 
+    private void doNotificetionOperation(int playbackState) {
+        Log.d(MainActivity.TAG, "Service -> doNotificetionOperation");
+        switch (playbackState) {
+            case PlaybackStateCompat.STATE_PLAYING: {
+                Notification audiobookNotif = getNotification(playbackState);
+                startForeground(NOTIFICATION_ID, audiobookNotif);
+                break;
+            }
+            case PlaybackStateCompat.STATE_PAUSED: {
+                NotificationManagerCompat.from(AudiobookService.this).notify(NOTIFICATION_ID, getNotification(playbackState));
+                stopForeground(false);
+                break;
+            }
+            default: {
+                stopForeground(true);
+                break;
+            }
+        }
+    }
+
+    private Notification getNotification(int playbackState) {
+        Log.d(MainActivity.TAG, "Service -> getNotification");
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID);
+
+        builder.addAction(new NotificationCompat.Action(R.drawable.ic_fast_rewind_black_24dp,
+                getString(R.string.rewind_back),
+                MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_REWIND)
+        ));
+
+        builder.addAction(new NotificationCompat.Action(R.drawable.ic_skip_previous_black_24dp,
+                getString(R.string.skip_prev),
+                MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS)
+        ));
+
+        if(playbackState == PlaybackStateCompat.STATE_PLAYING)
+            builder.addAction(new NotificationCompat.Action(R.drawable.ic_pause_black_24dp,
+                    getString(R.string.pause),
+                    MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PAUSE)
+            ));
+        else
+            builder.addAction(new NotificationCompat.Action(R.drawable.ic_play_arrow_black_24dp,
+                    getString(R.string.play),
+                    MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PLAY)
+            ));
+
+        builder.addAction(new NotificationCompat.Action(R.drawable.ic_skip_next_black_24dp,
+                getString(R.string.skip_next),
+                MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_SKIP_TO_NEXT)
+        ));
+
+        builder.addAction(new NotificationCompat.Action(R.drawable.ic_fast_forward_black_24dp,
+                getString(R.string.rewind_forward),
+                MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_FAST_FORWARD)
+        ));
+        builder.setStyle(new android.support.v4.media.app.NotificationCompat.MediaStyle()
+                .setShowActionsInCompactView(1)
+                .setShowCancelButton(true)
+                .setCancelButtonIntent(MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_STOP)));
+        builder.setSmallIcon(R.mipmap.ic_launcher);
+        //builder.setColor(ContextCompat.getColor(this, R.color.colorPrimaryDark));
+        builder.setShowWhen(false);
+        builder.setPriority(NotificationCompat.PRIORITY_HIGH);
+        builder.setOnlyAlertOnce(true);
+
+        return builder.build();
+    }
+
     private class PlayerHandler {
 
         private MediaPlayer player;
@@ -290,7 +375,7 @@ public class AudiobookService extends LifecycleService {
             else loadMediaAndStartPlayer(nowPlayingFile.getValue());
         }
 
-        public void loadMediaAndStartPlayer(File media) {
+        private void loadMediaAndStartPlayer(File media) {
             Log.d(MainActivity.TAG, "PlayerHandler -> loadMediaAndStartPlayer: load file");
             loadMedia(media);
             player.start();

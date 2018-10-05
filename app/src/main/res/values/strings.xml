@@ -1,6 +1,11 @@
 <resources>
     <string name="app_name">AudiobookPlayer</string>
-
-    <!-- TODO: Remove or change this placeholder text -->
     <string name="hello_blank_fragment">Hello blank fragment</string>
+    <string name="audiobook_notification_channel">audiobook_notification_channel</string>
+    <string name="rewind_back">rewind back</string>
+    <string name="rewind_forward">rewind forward</string>
+    <string name="pause">pause</string>
+    <string name="play">play</string>
+    <string name="skip_prev">skip to previous</string>
+    <string name="skip_next">skip to next</string>
 </resources>

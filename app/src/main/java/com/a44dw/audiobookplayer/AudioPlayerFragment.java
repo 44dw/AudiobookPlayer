@@ -140,7 +140,7 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
     public void onClick(View v) {
         switch (v.getId()) {
             case (R.id.playPauseButton): {
-                Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> playPauseButton");
+                Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> playPauseButton, AudiobookViewModel.getPlayerStatus() == " + AudiobookViewModel.getPlayerStatus());
                 if(AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PLAYING) {
                     mediaController.getTransportControls().pause();
                 } else {
@@ -164,12 +164,12 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
             }
             case (R.id.rewindBackButton): {
                 Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> rewindBackButton");
-                mediaController.getTransportControls().sendCustomAction("rewindBack", null);
+                mediaController.getTransportControls().rewind();
                 break;
             }
             case (R.id.rewindForwardButton): {
                 Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> rewindForwardButton");
-                mediaController.getTransportControls().sendCustomAction("rewindForward", null);
+                mediaController.getTransportControls().fastForward();
                 break;
             }
 
