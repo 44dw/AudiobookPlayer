@@ -3,4 +3,10 @@
     <color name="colorPrimary">#3F51B5</color>
     <color name="colorPrimaryDark">#303F9F</color>
     <color name="colorAccent">#FF4081</color>
+    <color name="pbBackgroundIncative">#CCC</color>
+    <color name="pbStroke">#9c9c9c</color>
+    <color name="pbScale">#0090FF</color>
+    <color name="pbScaleActive">#0277bd</color>
+    <color name="pbScaleDone">#FF8C00</color>
+    <color name="black">#000000</color>
 </resources>

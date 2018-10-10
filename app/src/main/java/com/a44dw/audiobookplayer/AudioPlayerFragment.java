@@ -24,22 +24,32 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 
 import java.io.File;
+import java.sql.Time;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
+import java.util.Map;
 
 public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlaybackStateChangedListener,
                                                              View.OnClickListener {
-
-    static ImageButton playPauseButton;
+    //View'ы
+    ImageButton playPauseButton;
     SeekBar seekBar;
-    TextView progressTextView;
+    TextView chapterTitle;
+    TextView timeToEndOfChapter;
+
     boolean userIsSeeking = false;
+    private SeekbarBroadReceiver seekbarReceiver;
     OnIterationWithActivityListener mActivityListener;
     MediaControllerCompat mediaController;
-    public static LiveData<Integer> nowPlayingMediaDuration;
-    private SeekbarBroadReceiver seekbarReceiver;
 
-    public AudioPlayerFragment() {
-        // Required empty public constructor
-    }
+    //LiveData objects
+    public static LiveData<Chapter> nowPlayingFile;
+    public static LiveData<Integer> nowPlayingMediaDuration;
+    public static LiveData<Map<String, String>> nowPlayingMediaMetadata;
+
+    public AudioPlayerFragment() {}
 
     @Override
     public void onAttach(Context c) {
@@ -81,8 +91,8 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
         view.findViewById(R.id.rewindBackButton).setOnClickListener(this);
         view.findViewById(R.id.rewindForwardButton).setOnClickListener(this);
         seekBar = view.findViewById(R.id.seekBar);
-        progressTextView = view.findViewById(R.id.progressTextView);
-        progressTextView.setText("test");
+        timeToEndOfChapter = view.findViewById(R.id.timeToEndOfChapter);
+        chapterTitle = view.findViewById(R.id.chapterTitle);
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             int userSelectedPosition = 0;
             @Override
@@ -102,6 +112,16 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
             }
         });
 
+        nowPlayingFile = AudiobookViewModel.getNowPlayingFile();
+        nowPlayingFile.observe(this, new Observer<Chapter>() {
+            @Override
+            public void onChanged(@Nullable Chapter chapter) {
+                onDurationChanged((int)chapter.getDuration());
+                String title = chapter.getTitle();
+                if((title != null)&&(chapterTitle != null)) chapterTitle.setText(title);
+            }
+        });
+        /*
         nowPlayingMediaDuration = AudiobookViewModel.getNowPlayingMediaDuration();
         nowPlayingMediaDuration.observe(this, new Observer<Integer>() {
             @Override
@@ -110,6 +130,17 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
                 onDurationChanged(duration);
             }
         });
+
+        nowPlayingMediaMetadata = AudiobookViewModel.getNowPlayingMediaMetadata();
+        nowPlayingMediaMetadata.observe(this, new Observer<Map<String, String>>() {
+            @Override
+            public void onChanged(@Nullable Map<String, String> metadataMap) {
+                Log.d(MainActivity.TAG, "AudioPlayerFragment -> nowPlayingMediaMetadata -> onChanged()");
+                String title = metadataMap.get("title");
+                if((title != null)&&(chapterTitle != null)) chapterTitle.setText(title);
+            }
+        });
+        */
 
         return view;
     }
@@ -187,14 +218,15 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
         playPauseButton.setImageResource(R.drawable.ic_play_arrow_black_24dp);
     }
 
-
     public class SeekbarBroadReceiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
             if(!userIsSeeking) {
                 int position = intent.getIntExtra(MainActivity.playbackStatus, 0);
+                int remainingTime = (int)nowPlayingFile.getValue().getDuration() - position;
+                DateFormat df = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
                 seekBar.setProgress(position);
-                progressTextView.setText("position is " + String.valueOf(position));
+                timeToEndOfChapter.setText(df.format(remainingTime));
             }
         }
     }

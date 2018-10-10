@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.arch.lifecycle.LiveData;
 import android.arch.lifecycle.ViewModelProviders;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
@@ -19,9 +20,6 @@ import android.support.v4.media.session.PlaybackStateCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
-import android.widget.Toast;
-
-import java.io.File;
 
 public class MainActivity extends AppCompatActivity implements OnIterationWithActivityListener {
 
@@ -44,15 +42,16 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
     FragmentTransaction fragmentTransaction;
     FileManagerFragment fileManagerFragment;
     AudioPlayerFragment audioPlayerFragment;
+    BookScaleFragment bookScaleFragment;
     OnPlaybackStateChangedListener playbackStateChangedListener;
     public static int nowFragmentStatus;
+    public static boolean isBookscaleShown = false;
     public static final int SHOW_MEDIA_PLAYER = 1;
     public static final int SHOW_FILE_MANAGER = 2;
     public static final String seekBarBroadcastName = "seekBarBroadcastName";
     public static final String playbackStatus = "playbackStatus";
 
     //ViewModel и всё, что с ней связано
-    public static LiveData<File> nowPlayingFile;
     static AudiobookViewModel model;
 
     @Override
@@ -75,20 +74,17 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
                         case (PlaybackStateCompat.STATE_PLAYING): {
                             Log.d(MainActivity.TAG, "MA -> onPlaybackStateChanged: STATE_PLAYING");
                             if(nowFragmentStatus == SHOW_FILE_MANAGER) launchPlayerFragment();
+                            if(!isBookscaleShown) {
+                                launchBookScaleFragment();
+                                isBookscaleShown = true;
+                            }
                             playbackStateChangedListener.onPlayMedia();
                             break;
                         }
+                        case (PlaybackStateCompat.STATE_STOPPED):
                         case (PlaybackStateCompat.STATE_PAUSED): {
-                            Log.d(MainActivity.TAG, "MA -> onPlaybackStateChanged: STATE_PAUSED");
+                            Log.d(MainActivity.TAG, "MA -> onPlaybackStateChanged: STATE_PAUSED/STATE_STOPPED");
                             playbackStateChangedListener.onPauseMedia();
-                            break;
-                        }
-                        case (PlaybackStateCompat.STATE_SKIPPING_TO_PREVIOUS):
-                        case (PlaybackStateCompat.STATE_SKIPPING_TO_NEXT): {
-                            Log.d(MainActivity.TAG, "MA -> onPlaybackStateChanged: STATE_SKIPPING_TO_NEXT/PREVIOUS");
-                            //запрашиваем новый файл
-                            File newFile = model.getNextOrPrevFile();
-                            model.updateNowPlayingFile(newFile);
                             break;
                         }
                     }
@@ -126,20 +122,12 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
         //инициализация фрагментов
         fileManagerFragment = new FileManagerFragment();
         audioPlayerFragment = new AudioPlayerFragment();
+        bookScaleFragment = new BookScaleFragment();
         playbackStateChangedListener = audioPlayerFragment;
         launchPlayerFragment();
 
         //настраиваем модель
         model = ViewModelProviders.of(this).get(AudiobookViewModel.class);
-        model.initializeListener(this);
-        /*
-        nowPlayingFile = AudiobookViewModel.getNowPlayingFile();
-        nowPlayingFile.observe(this, new Observer<File>() {
-            @Override
-            public void onChanged(@Nullable File file) {
-            }
-        });
-        */
     }
 
     public static void verifyPermissions(Activity activity) {
@@ -193,8 +181,15 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
         nowFragmentStatus = SHOW_MEDIA_PLAYER;
     }
 
+    public void launchBookScaleFragment() {
+        Log.d(MainActivity.TAG, "MA -> launchPlayerFragment()");
+        fragmentTransaction = getSupportFragmentManager().beginTransaction();
+        fragmentTransaction.replace(R.id.bookScaleLayout, bookScaleFragment);
+        fragmentTransaction.commit();
+    }
+
     public interface OnBackPressedListener {
-        public void onBackPressed();
+        void onBackPressed();
     }
 
     public interface OnPlaybackStateChangedListener {

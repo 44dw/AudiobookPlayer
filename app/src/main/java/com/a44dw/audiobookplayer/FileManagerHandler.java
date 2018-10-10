@@ -1,12 +1,20 @@
 package com.a44dw.audiobookplayer;
 
+import android.content.ContentResolver;
+import android.content.Context;
+import android.media.MediaMetadataRetriever;
+import android.net.Uri;
 import android.os.Environment;
+import android.support.v4.media.MediaMetadataCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
 import android.util.Log;
 import android.view.View;
+import android.widget.Toast;
 
 import java.io.File;
+import java.net.URLConnection;
 import java.util.ArrayList;
+import java.util.List;
 
 import static com.a44dw.audiobookplayer.MainActivity.model;
 
@@ -24,44 +32,39 @@ public class FileManagerHandler implements FileManagerAdapter.OnItemClickListene
         return Environment.getExternalStorageDirectory();
     }
 
-    public File getNextOrPrevFile() {
-        File nowPlayingFile = AudiobookViewModel.getNowPlayingFile().getValue();
-        File directory = pathToCurrentDirectory.get(pathToCurrentDirectory.size() - 1);
-        File[] filesInDirectory = directory.listFiles();
-        boolean find = false;
-        switch (AudiobookViewModel.getPlayerStatus()) {
-            case PlaybackStateCompat.STATE_SKIPPING_TO_PREVIOUS: {
-                Log.d(MainActivity.TAG, "FileManagerHandler -> getNextOrPrevFile(): search for prev");
-                for(int i = filesInDirectory.length-1; i>=0; i--) {
-                    if(find) {
-                        if(filesInDirectory[i].isDirectory()) continue;
-                        return filesInDirectory[i];
-                    }
-                    if(filesInDirectory[i].equals(nowPlayingFile)) find = true;
-                }
-                break;
-            }
-            case PlaybackStateCompat.STATE_SKIPPING_TO_NEXT: {
-                Log.d(MainActivity.TAG, "FileManagerHandler -> getNextOrPrevFile(): search for next");
-                for(File f : filesInDirectory) {
-                    if(find) {
-                        if(f.isDirectory()) continue;
-                        return f;
-                    }
-                    if(f.equals(nowPlayingFile)) find = true;
-                }
-            }
-            break;
-            default: Log.d(MainActivity.TAG, "FileManagerHandler -> getNextOrPrevFile(): default: playerStatus " + AudiobookViewModel.getPlayerStatus());
-        }
-        return null;
-    }
-
     public void openPath(File openedFile) {
         if (openedFile.isDirectory()) {
             pathToCurrentDirectory.add(openedFile);
             fragmentListener.onChooseDirectory(openedFile);
-        } else model.updateNowPlayingFile(openedFile);
+        } else {
+            if(isAudio(openedFile)) {
+                AudiobookViewModel.updateNowPlayingFile(new Chapter(openedFile));
+                AudiobookViewModel.updatePlaylist(getPlaylist());
+            }
+            else {
+                Context context = ((FileManagerFragment)fragmentListener).getContext();
+                Toast.makeText(context,
+                        context.getString(R.string.wrong_file),
+                        Toast.LENGTH_SHORT)
+                        .show();
+            }
+        }
+    }
+
+    public ArrayList<Chapter> getPlaylist() {
+        ArrayList<Chapter> playlist = new ArrayList<>();
+        File directory = pathToCurrentDirectory.get(pathToCurrentDirectory.size() - 1);
+        File[] filesInDirectory = directory.listFiles();
+        for(File f : filesInDirectory) {
+            if(isAudio(f)) {
+                playlist.add(new Chapter(f));
+            }
+        }
+        return playlist;
+    }
+
+    private Boolean isAudio(File file) {
+        return URLConnection.guessContentTypeFromName(file.toString()).equals("audio/mpeg");
     }
 
     @Override
