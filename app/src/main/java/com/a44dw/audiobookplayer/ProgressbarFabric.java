@@ -2,10 +2,8 @@ package com.a44dw.audiobookplayer;
 
 import android.content.Context;
 import android.content.res.Resources;
-import android.graphics.drawable.Drawable;
 import android.media.MediaMetadataRetriever;
 import android.support.constraint.ConstraintLayout;
-import android.support.v4.content.ContextCompat;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
@@ -14,7 +12,6 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 
 import java.io.File;
-import java.util.Map;
 
 public class ProgressbarFabric {
 
@@ -56,8 +53,7 @@ public class ProgressbarFabric {
         bar.setLayoutParams(params);
         ProgressBar scale = bar.findViewById(R.id.progressbar);
         scale.setMax((int)chapter.getDuration());
-
-        bar.setTag(chapter);
+        scale.setProgress((int)chapter.getProgress());
 
         return bar;
     }

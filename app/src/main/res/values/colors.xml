@@ -9,4 +9,6 @@
     <color name="pbScaleActive">#0277bd</color>
     <color name="pbScaleDone">#FF8C00</color>
     <color name="black">#000000</color>
+    <color name="white">#FFFF</color>
+    <color name="mocassin">#FFE4B5</color>
 </resources>

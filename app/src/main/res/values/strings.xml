@@ -1,8 +1,16 @@
 <resources>
+    <string name="key_path">path</string>
+    <string name="key_is_media">is_media</string>
+
     <string name="wrong_file">Неверный формат файла</string>
     <string name="end_of_dir">Достигнут конец каталога</string>
+    <string name="no_media">В каталоге не найдено подходящих файлов</string>
+    <string name="change_root_directory">Данная папка установлена в качестве корневой</string>
+    <string name="bookinfo_to_end">До конца книги:</string>
+    <string name="bookinfo_unlistened">Всего непрослушано:</string>
+    <string name="menu_speed">Скорость воспроизведения</string>
+    <string name="menu_volume">Увеличить громкость</string>
     <string name="app_name">AudiobookPlayer</string>
-    <string name="hello_blank_fragment">Hello blank fragment</string>
     <string name="audiobook_notification_channel">audiobook_notification_channel</string>
     <string name="rewind_back">rewind back</string>
     <string name="rewind_forward">rewind forward</string>
@@ -10,4 +18,26 @@
     <string name="play">play</string>
     <string name="skip_prev">skip to previous</string>
     <string name="skip_next">skip to next</string>
+    <string name="menu_bookmark">Сделать закладку</string>
+    <string name="menu_library">Последние открытые книги</string>
+    <string name="menu_bookmarks">Закладки</string>
+    <string name="menu_theme">День/ночь</string>
+    <string name="menu_settings">Настройки</string>
+    <string name="menu_about">О программе</string>
+    <string name="menu_play">Пуск/пауза</string>
+    <string name="menu_filemanager_refresh">Обновить</string>
+    <string name="menu_filemanager_special">Назначить папкой по умолчанию</string>
+
+    <!-- TODO: Remove or change this placeholder text -->
+    <string name="hello_blank_fragment">Hello blank fragment</string>
+    <string name="add_bookmark">Закладка добавлена</string>
+    <string name="menu_open">Открыть книгу...</string>
+    <string name="contextmenu_bookmarks_change">переименовать</string>
+    <string name="contextmenu_bookmarks_delete">удалить</string>
+    <string name="bookmark_rename_dialog_title">Редактировать</string>
+    <string name="bookmark_rename_dialog_edit">Новое имя закладки</string>
+    <string name="dialog_positive">ОК</string>
+    <string name="dialog_negative">Отмена</string>
+    <string name="bookmark_list_item_hint_path">Файл:</string>
+    <string name="bookmark_list_item_hint_time">Время</string>
 </resources>

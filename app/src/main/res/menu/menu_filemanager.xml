@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/menu_play"
+        android:icon="@drawable/ic_play_arrow_white_24dp"
+        android:title="@string/menu_play"
+        android:visible="false"
+        app:showAsAction="always"/>
+    <item
+        android:id="@+id/menu_filemanager_refresh"
+        android:icon="@drawable/ic_refresh_white_24dp"
+        android:title="@string/menu_filemanager_refresh"
+        app:showAsAction="always"/>
+    <item
+        android:id="@+id/menu_filemanager_special"
+        android:icon="@drawable/ic_folder_special_black_24dp"
+        android:title="@string/menu_filemanager_special"
+        app:showAsAction="always"/>
+</menu>

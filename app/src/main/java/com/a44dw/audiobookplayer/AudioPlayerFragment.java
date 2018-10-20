@@ -6,30 +6,26 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.media.MediaPlayer;
-import android.net.Uri;
 import android.os.Bundle;
-import android.os.RemoteException;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.support.v4.media.session.MediaControllerCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
 import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
-import java.io.File;
-import java.sql.Time;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
-import java.time.format.DateTimeFormatter;
 import java.util.Locale;
-import java.util.Map;
 
 public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlaybackStateChangedListener,
                                                              View.OnClickListener {
@@ -46,8 +42,8 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
 
     //LiveData objects
     public static LiveData<Chapter> nowPlayingFile;
-    public static LiveData<Integer> nowPlayingMediaDuration;
-    public static LiveData<Map<String, String>> nowPlayingMediaMetadata;
+
+    public static final String BOOKMARK_TAG = "bookmark";
 
     public AudioPlayerFragment() {}
 
@@ -66,13 +62,12 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        //получаем контроллер для взаимодействия с MediaSession
-        mediaController = mActivityListener.getMediaControllerCompat();
-
         //регистрируем ресивер для получения информации о прогрессе песни
         IntentFilter filter = new IntentFilter(MainActivity.seekBarBroadcastName);
         seekbarReceiver = new SeekbarBroadReceiver();
         getContext().registerReceiver(seekbarReceiver, filter);
+
+        setHasOptionsMenu(true);
     }
 
     @Override
@@ -108,6 +103,8 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
                 userIsSeeking = false;
+                //получаем контроллер для взаимодействия с MediaSession
+                if(mediaController == null) mediaController = mActivityListener.getMediaControllerCompat();
                 mediaController.getTransportControls().seekTo((long) userSelectedPosition);
             }
         });
@@ -117,43 +114,52 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
             @Override
             public void onChanged(@Nullable Chapter chapter) {
                 onDurationChanged((int)chapter.getDuration());
-                String title = chapter.getTitle();
-                if((title != null)&&(chapterTitle != null)) chapterTitle.setText(title);
+                //Вешает название трека в chapterTitle - возможно не понадобится
+                //String chapterName = chapter.getChapter();
+                //if((chapterName != null)&&(chapterTitle != null)) chapterTitle.setText(chapterName);
             }
         });
-        /*
-        nowPlayingMediaDuration = AudiobookViewModel.getNowPlayingMediaDuration();
-        nowPlayingMediaDuration.observe(this, new Observer<Integer>() {
-            @Override
-            public void onChanged(@Nullable Integer duration) {
-                Log.d(MainActivity.TAG, "AudioPlayerFragment -> nowPlayingMediaDuration -> onChanged(): duration: " + duration);
-                onDurationChanged(duration);
-            }
-        });
-
-        nowPlayingMediaMetadata = AudiobookViewModel.getNowPlayingMediaMetadata();
-        nowPlayingMediaMetadata.observe(this, new Observer<Map<String, String>>() {
-            @Override
-            public void onChanged(@Nullable Map<String, String> metadataMap) {
-                Log.d(MainActivity.TAG, "AudioPlayerFragment -> nowPlayingMediaMetadata -> onChanged()");
-                String title = metadataMap.get("title");
-                if((title != null)&&(chapterTitle != null)) chapterTitle.setText(title);
-            }
-        });
-        */
 
         return view;
     }
 
     @Override
-    public void onResume() {
-        super.onResume();
+    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+        Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateOptionsMenu()");
+        inflater.inflate(R.menu.menu_player, menu);
+        super.onCreateOptionsMenu(menu, inflater);
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        Log.d(MainActivity.TAG, "AudioPlayerFragment -> onOptionsItemSelected()");
+        int id = item.getItemId();
+        switch (id) {
+            case R.id.menu_speed:
+                return true;
+            case R.id.menu_volume:
+                return true;
+            case R.id.menu_bookmark:
+                addBookmark();
+                return true;
+            default:
+                return super.onOptionsItemSelected(item);
+        }
+    }
+
+    private void addBookmark() {
+        Log.d(MainActivity.TAG, "added bookmark");
+        AudiobookViewModel.addBookmark();
+        Toast.makeText(getActivity(),
+                getString(R.string.add_bookmark),
+                Toast.LENGTH_SHORT)
+                .show();
     }
 
     @Override
     public void onDestroy() {
-        getContext().unregisterReceiver(seekbarReceiver);
         super.onDestroy();
+        getContext().unregisterReceiver(seekbarReceiver);
     }
 
     @Override
@@ -163,22 +169,26 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
 
     public void onDurationChanged(int duration) {
         seekBar.setMax(duration);
+        //TODO из-за этого скорее всего прыгает сикбар
         seekBar.setProgress(0);
         Log.d(MainActivity.TAG, "AudioPlayerFragment -> onDurationChanged: the max of seekBar is " + seekBar.getMax());
     }
 
     @Override
     public void onClick(View v) {
+        //получаем контроллер для взаимодействия с MediaSession
+        if(mediaController == null) mediaController = mActivityListener.getMediaControllerCompat();
         switch (v.getId()) {
             case (R.id.playPauseButton): {
                 Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> playPauseButton, AudiobookViewModel.getPlayerStatus() == " + AudiobookViewModel.getPlayerStatus());
                 if(AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PLAYING) {
+                    Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> playPauseButton, mediaController is " + mediaController);
                     mediaController.getTransportControls().pause();
                 } else {
                     if(AudiobookViewModel.getNowPlayingFile().getValue() != null) {
                         mediaController.getTransportControls().play();
                     } else {
-                        mActivityListener.launchFileManagerFragment();
+                        mActivityListener.showFileManager(true);
                     }
                 }
                 break;
@@ -203,7 +213,6 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
                 mediaController.getTransportControls().fastForward();
                 break;
             }
-
         }
     }
 

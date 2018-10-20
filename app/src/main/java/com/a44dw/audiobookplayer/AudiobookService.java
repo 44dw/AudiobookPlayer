@@ -51,8 +51,6 @@ public class AudiobookService extends LifecycleService {
 
     //классы LiveData
     public static LiveData<Chapter> nowPlayingFile;
-    public static LiveData<ArrayList<Chapter>> playlist;
-    //public static ArrayList<Chapter> updatablePlaylist;
 
     //класс, ответственный за нотификации
     private AudiobookNotificationManager audiobookNotificationManager;
@@ -60,6 +58,8 @@ public class AudiobookService extends LifecycleService {
     //константы и флаги
     public static final int POSITION_REFRESH_INTERVAL = 500;
     private static final int NOTIFICATION_ID = 700;
+    //прогресс, по истечении которого onSkipToPrevious будет перематывать в начала
+    private static final int RETURN_PROGRESS = 5000;
     private final String NOTIFICATION_CHANNEL_ID = "audio_book";
     private boolean audioFocusRequested = false;
     private boolean serviceIsStarted = false;
@@ -132,17 +132,6 @@ public class AudiobookService extends LifecycleService {
                         .show();
             }
         });
-        playlist = AudiobookViewModel.getPlaylist();
-        playlist.observe(this, new Observer<ArrayList<Chapter>>() {
-            @Override
-            public void onChanged(@Nullable ArrayList<Chapter> playlist) {
-                Log.d(MainActivity.TAG, "Service -> onChanged playlist:");
-                if(playlist != null) {
-                    for(Chapter chapter : playlist) Log.d(MainActivity.TAG, chapter.getFile().toString());
-                    //updatablePlaylist = (ArrayList<Chapter>) playlist.clone();
-                }
-            }
-        });
     }
 
     @Override
@@ -169,7 +158,11 @@ public class AudiobookService extends LifecycleService {
             Log.d(MainActivity.TAG, "Service -> onPlay()");
             if (!serviceIsStarted) startService(new Intent(getApplicationContext(), AudiobookService.class));
 
-            playerHandler.play();
+            int status = AudiobookViewModel.getPlayerStatus();
+            if(status == PlaybackStateCompat.STATE_PAUSED) {
+                Log.d(MainActivity.TAG, "mediaSessionCallback -> onPlay() -> resume playback");
+                playerHandler.resume();
+            } else playerHandler.play();
 
             switch (playerHandler.isPlaying() ? 1 : 0) {
                 //если файл подходит по формату...
@@ -242,65 +235,43 @@ public class AudiobookService extends LifecycleService {
 
         @Override
         public void onSkipToNext() {
-            int position = playerHandler.getCurrentPosition();
-            //playerHandler.stop();
-            File npfile = nowPlayingFile.getValue().getFile();
-            ArrayList<Chapter> nplist = playlist.getValue();
-            if(npfile == null) return;
+            Log.d(MainActivity.TAG, "Service -> onSkipToNext()");
+
             mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_SKIPPING_TO_NEXT,
                     PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
                     1).build());
-            boolean find = false;
-            for(int i=0; i<nplist.size(); i++) {
-                Chapter ch = nplist.get(i);
-                if(find) {
-                    AudiobookViewModel.updateNowPlayingFile(ch);
-                    return;
-                }
-                if(ch.getFile().equals(npfile)) {
-                    //запоминаем позицию
-                    Log.d(MainActivity.TAG, "PlayerHandler -> onSkipToNext: current position is " + position);
-                    nplist.get(i).setProgress(position);
 
-                    //не работает?
-                    if(position == ch.getDuration()) nplist.get(i).setDone(true);
-
-                    find = true;
-                }
-            }
-            //если текущий файл - последний в каталоге
-            Toast.makeText(getApplicationContext(),
+            Book playlist = AudiobookViewModel.getPlaylist();
+            Chapter nextCh = playlist.getNext();
+            Log.d(MainActivity.TAG, "Service -> onSkipToNext() -> get new chapter: " + nextCh.getChapter());
+            Log.d(MainActivity.TAG, "Service -> onSkipToNext() -> with progress: " + nextCh.getProgress());
+            if(nextCh != null) {
+                AudiobookViewModel.updateNowPlayingFile(nextCh);
+            } else {
+                //если текущий файл - последний в каталоге
+                Toast.makeText(getApplicationContext(),
                     getString(R.string.end_of_dir),
                     Toast.LENGTH_SHORT)
                     .show();
-            onStop();
+                onStop();
+            }
         }
 
         @Override
         public void onSkipToPrevious() {
-            int position = playerHandler.getCurrentPosition();
-            //playerHandler.stop();
-            File npfile = nowPlayingFile.getValue().getFile();
-            ArrayList<Chapter> nplist = playlist.getValue();
-            mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_SKIPPING_TO_PREVIOUS,
-                    PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
-                    1).build());
-            boolean find = false;
-            for(int i = nplist.size()-1; i>=0; i--) {
-                Chapter ch = nplist.get(i);
-                if(find) {
-                    AudiobookViewModel.updateNowPlayingFile(nplist.get(i));
-                    return;
-                }
-                if(ch.getFile().equals(npfile)) {
-                    //запоминаем позицию
-                    ch.setProgress(position);
+            //если после старта файла прошло больше 5 секунд - перематываем в начало
+            if(playerHandler.getCurrentPosition() > RETURN_PROGRESS) {
+                playerHandler.startFromBeginning();
+            } else {
+                //если меньше - включаем предыдущий трек
+                mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_SKIPPING_TO_PREVIOUS,
+                        PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
+                        1).build());
 
-                    find = true;
-                }
+                Book playlist = AudiobookViewModel.getPlaylist();
+                Chapter prevCh = playlist.getPrevious();
+                AudiobookViewModel.updateNowPlayingFile(prevCh);
             }
-            //если текущий файл - первый в каталоге
-            AudiobookViewModel.updateNowPlayingFile(nowPlayingFile.getValue());
         }
 
         @Override
@@ -342,6 +313,13 @@ public class AudiobookService extends LifecycleService {
         @Override
         public void onSeekTo(long newPosition) {
             playerHandler.seekTo(newPosition);
+        }
+
+        @Override
+        public void onCustomAction(String action, Bundle extras) {
+            if(action == AudioPlayerFragment.BOOKMARK_TAG) {
+                playerHandler.createBookmark();
+            }
         }
     };
 
@@ -478,14 +456,16 @@ public class AudiobookService extends LifecycleService {
         public void play() {
             Log.d(MainActivity.TAG, "PlayerHandler -> play()");
             int status = AudiobookViewModel.getPlayerStatus();
-            if(status == PlaybackStateCompat.STATE_PAUSED) resume();
-            else {
-                if(status == PlaybackStateCompat.STATE_PLAYING) stop();
-                Chapter ch = nowPlayingFile.getValue();
-                //если файл закончен, начинаем сначала, если нет - с текущей позиции
-                int position = (ch.isDone() ? 0 : (int)ch.getProgress());
-                loadMediaAndStartPlayer(ch.getFile(), position);
-            }
+
+            if(status != PlaybackStateCompat.STATE_STOPPED) stop();
+            Chapter ch = nowPlayingFile.getValue();
+            Log.d(MainActivity.TAG, "PlayerHandler -> play() -> duration: " + ch.getDuration());
+            Log.d(MainActivity.TAG, "PlayerHandler -> play() -> position: " + ch.getProgress());
+            Log.d(MainActivity.TAG, "PlayerHandler -> play() -> isDone: " + ch.isDone());
+            //если файл закончен, начинаем сначала, если нет - с текущей позиции
+            int position = (ch.isDone() ? 0 : (int)ch.getProgress());
+            loadMediaAndStartPlayer(ch.getFile(), position);
+
         }
 
         private void loadMediaAndStartPlayer(File media, int position) {
@@ -493,18 +473,12 @@ public class AudiobookService extends LifecycleService {
             loadMedia(media);
             if(position > 0) player.seekTo(position);
             player.start();
-            //плохо, хорошо бы операции с ViewModel вывести из PlayerHandler
-            /*if(isPlaying()) {
-                AudiobookViewModel.updateNowPlayingMediaDuration(getDuration());
-                AudiobookViewModel.updateNowPlayingMediaMetadata(getMetadata());
-            }*/
         }
 
         private void loadMedia(File media) {
             if(player == null)initializeMediaPlayer();
             try {
                 player.setDataSource(media.toString());
-                Log.d(MainActivity.TAG, "PlayerHandler -> loadMedia(): loaded media name " + media);
                 player.prepare();
             } catch (IOException e) {
                 e.printStackTrace();
@@ -518,6 +492,8 @@ public class AudiobookService extends LifecycleService {
                 @Override
                 public void onCompletion(MediaPlayer mp) {
                     Log.d(MainActivity.TAG, "PlayerHandler -> initializeMediaPlayer() -> setOnCompletionListener()");
+                    //обязательно вызвать для очистки плеера
+                    stop();
                     //плохо, хорошо бы операции с mediaSessionCallback вывести из PlayerHandler
                     mediaSessionCallback.onSkipToNext();
                 }
@@ -529,7 +505,6 @@ public class AudiobookService extends LifecycleService {
         }
 
         public int getCurrentPosition() {
-            Log.d(MainActivity.TAG, "PlayerHandler -> getCurrentPosition()");
             int currentPosition = 0;
             if(isPlaying()) currentPosition = player.getCurrentPosition();
             return currentPosition;
@@ -546,7 +521,7 @@ public class AudiobookService extends LifecycleService {
             player.pause();
         }
 
-        private void resume() {
+        public void resume() {
             Log.d(MainActivity.TAG, "PlayerHandler -> resume()");
             player.start();
         }
@@ -561,8 +536,12 @@ public class AudiobookService extends LifecycleService {
         public void rewindBack() {
             Log.d(MainActivity.TAG, "PlayerHandler -> rewindBack()");
             int playerPosition = player.getCurrentPosition();
-            int newPosition = playerPosition - 5*1000;
+            int newPosition = playerPosition - RETURN_PROGRESS;
             player.seekTo(newPosition > 0 ? newPosition : 0);
+        }
+
+        public void startFromBeginning() {
+            player.seekTo(0);
         }
 
         public void rewindForward() {
@@ -608,6 +587,11 @@ public class AudiobookService extends LifecycleService {
             return metaMap;
         }
 
+        public void createBookmark() {
+            Log.d(MainActivity.TAG, "PlayerHandler -> createBookmark()");
+
+        }
+
         //Обновление seekBar в AudioFragment
         private void startUpdatingCallbackWithPosition() {
             Log.d(MainActivity.TAG, "PlayerHandler -> startUpdatingCallbackWithPosition()");
@@ -631,9 +615,11 @@ public class AudiobookService extends LifecycleService {
 
         private void updateProgressCallbackTask() {
             if(playerHandler.isPlaying()) {
-                Log.d(MainActivity.TAG, "AudioPlayerHandler -> updateProgressCallbackTask()");
+                //Log.d(MainActivity.TAG, "AudioPlayerHandler -> updateProgressCallbackTask()");
+                int position = playerHandler.getCurrentPosition();
+                AudiobookViewModel.updateNowPlayingPosition(position);
                 Intent broadcastIntent = new Intent();
-                broadcastIntent.putExtra(MainActivity.playbackStatus, playerHandler.getCurrentPosition());
+                broadcastIntent.putExtra(MainActivity.playbackStatus, position);
                 broadcastIntent.setAction(MainActivity.seekBarBroadcastName);
                 sendBroadcast(broadcastIntent);
             }
