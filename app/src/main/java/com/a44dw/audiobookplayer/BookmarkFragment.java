@@ -5,7 +5,6 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
-import android.support.v4.app.DialogFragment;
 import android.support.v4.app.Fragment;
 import android.support.v4.media.session.PlaybackStateCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -21,10 +20,19 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+
 import java.io.File;
 import java.util.ArrayList;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItemClickListener{
+public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItemClickListener,
+                                                          MainActivity.OnBackPressedListener {
+
+    public static final String BOOKMARK_BUNDLE_KEY = "bookmarkBundleKey";
+    public static final String BOOKMARK_TIME_TAG = "bookmarkTime";
 
     private View view;
     private RecyclerView bookmarkRecyclerView;
@@ -35,9 +43,6 @@ public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItem
     private ArrayList<Bookmark> bookmarks;
     private Bookmark editedBookmark;
     private View editedView;
-    public static final int BOOKMARK_RENAME_DIALOG_CODE = 1;
-    public static final String BOOKMARK_RENAME_DIALOG_TAG = "bookmarkRenameDialog";
-    public static final String EXTRA_NAME = "name";
 
     public BookmarkFragment() {}
 
@@ -47,20 +52,14 @@ public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItem
         view = inflater.inflate(R.layout.fragment_bookmark, container, false);
         bookmarkRecyclerView = view.findViewById(R.id.bookmarkRecyclerView);
         Log.d(MainActivity.TAG, "BookmarkFragment -> onCreateView");
-
         activityListener = (OnIterationWithActivityListener) getActivity();
 
+        Bundle args = getArguments();
+        bookmarks = (args == null ? getBookmarks() : getBookmarks(args.getString(BOOKMARK_BUNDLE_KEY)));
         updateBookmarks();
-
         setHasOptionsMenu(true);
         return view;
     }
-
-    @Override
-    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
-        super.onViewCreated(view, savedInstanceState);
-    }
-
 
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
@@ -83,7 +82,6 @@ public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItem
     public void updateBookmarks() {
         Log.d(MainActivity.TAG, "BookmarkFragment -> updateBookmarks");
         manager = new LinearLayoutManager(getContext());
-        bookmarks = getBookmarks();
         adapter = new BookmarkAdapter(bookmarks, this);
         bookmarkRecyclerView.setLayoutManager(manager);
         bookmarkRecyclerView.setAdapter(adapter);
@@ -94,7 +92,9 @@ public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItem
     }
 
     private ArrayList<Bookmark> getBookmarks() {
-        ArrayList<Chapter> chapters = AudiobookViewModel.getPlaylist().getChapters();
+        Book book = AudiobookViewModel.getPlaylist();
+        ArrayList<Chapter> chapters;
+        chapters = ((book != null) ? book.getChapters() : new ArrayList<Chapter>());
         ArrayList<Bookmark> bookmarkList = new ArrayList<>();
 
         for(Chapter ch : chapters) {
@@ -107,21 +107,30 @@ public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItem
         return bookmarkList;
     }
 
+    private ArrayList<Bookmark> getBookmarks(String jsonBook) {
+        ArrayList<Bookmark> bookmarkList = new ArrayList<>();
+
+        GsonBuilder builder = new GsonBuilder();
+        Gson gson = builder.create();
+        Pattern pattern = Pattern.compile(LastbooksAdapter.REGEX_GET_BOOKMARK);
+        Matcher matcher = pattern.matcher(jsonBook);
+        if(matcher.find()) bookmarkList.add(gson.fromJson(matcher.group(1), Bookmark.class));
+
+        return bookmarkList;
+    }
+
     private void openBookmark(Bookmark b) {
-        /*
-        Log.d(MainActivity.TAG, "BookmarkFragment -> openBookmark");
-        Chapter ch = b.getChapter();
-        ch.setProgress(b.getTime());
-        AudiobookViewModel.updateNowPlayingFile(ch);
-        activityListener.showBookmarks(false);
-        */
         int numInPl = AudiobookViewModel.getPlaylist().findInChapters(b.getPathToFile());
-        if(numInPl != -1) {
+        if(numInPl == -1) {
+            File file = new File(b.getPathToFile());
+            AudiobookViewModel.updateNowPlayingFile(new Chapter(file));
+            activityListener.updateTime(b.getTime());
+        } else {
             Chapter ch = AudiobookViewModel.getPlaylist().getChapters().get(numInPl);
             ch.setProgress(b.getTime());
             AudiobookViewModel.updateNowPlayingFile(ch);
-            activityListener.showBookmarks(false);
         }
+        activityListener.showBookmarks(false, null);
     }
 
     @Override
@@ -178,18 +187,18 @@ public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItem
     };
 
     private void showBookmarkRenameDialog() {
-        BookmarkRenameDialog dialog = new BookmarkRenameDialog();
-        dialog.setTargetFragment(this, BOOKMARK_RENAME_DIALOG_CODE);
-        dialog.show(getActivity().getSupportFragmentManager().beginTransaction(), BOOKMARK_RENAME_DIALOG_TAG);
+        RenameDialog dialog = new RenameDialog();
+        dialog.setTargetFragment(this, RenameDialog.RENAME_DIALOG_CODE);
+        dialog.show(getActivity().getSupportFragmentManager().beginTransaction(), RenameDialog.RENAME_DIALOG_TAG);
     }
 
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         switch(requestCode) {
-            case BOOKMARK_RENAME_DIALOG_CODE: {
+            case RenameDialog.RENAME_DIALOG_CODE: {
                 if (resultCode == Activity.RESULT_OK) {
                     Log.d(MainActivity.TAG, "BookmarkFragment -> onActivityResult -> RESULT_OK");
-                    String newName = data.getStringExtra(EXTRA_NAME);
+                    String newName = data.getStringExtra(RenameDialog.EXTRA_NAME);
                     editBookmarkName(newName);
                 } else if (resultCode == Activity.RESULT_CANCELED){}
 
@@ -213,8 +222,14 @@ public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItem
                 //приходится удалять из двух мест, потому что иначе notifyDataSetChanged() не работает
                 ch.deleteBookmark(editedBookmark);
                 bookmarks.remove(editedBookmark);
+                if(ch.getBookmarks().size() == 0) activityListener.onBookmarkInteraction(numInPl);
                 adapter.notifyDataSetChanged();
             }
         }
+    }
+
+    @Override
+    public void onBackPressed() {
+        activityListener.goBack();
     }
 }

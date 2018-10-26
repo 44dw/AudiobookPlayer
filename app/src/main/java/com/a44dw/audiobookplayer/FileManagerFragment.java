@@ -5,7 +5,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
+import android.os.Environment;
 import android.support.v4.app.Fragment;
+import android.support.v4.app.FragmentManager;
 import android.support.v4.media.session.PlaybackStateCompat;
 import android.support.v7.widget.DividerItemDecoration;
 import android.support.v7.widget.LinearLayoutManager;
@@ -153,7 +155,12 @@ public class FileManagerFragment extends Fragment implements FileManagerHandler.
 
     @Override
     public void onBackPressed() {
-        goToParentDirectory();
+        String currentPath = pathToCurrentDirectory.get(pathToCurrentDirectory.size() - 1).getAbsolutePath();
+        String rootPath = Environment.getExternalStorageDirectory().getAbsolutePath();
+        Log.d(MainActivity.TAG, "FileManagerFragment -> onBackPressed: currentPath: " + currentPath + "\nrootpath: " + rootPath);
+        if(currentPath.equals(rootPath)) {
+            activityListener.goBack();
+        } else goToParentDirectory();
     }
 
     @Override

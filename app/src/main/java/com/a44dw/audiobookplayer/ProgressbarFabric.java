@@ -22,14 +22,18 @@ public class ProgressbarFabric {
     private float heightMax;
     private float heightDiffer;
 
-    public ProgressbarFabric(Context c, Long[] interval) {
+    public ProgressbarFabric(Context c) {
         Log.d(MainActivity.TAG, "ProgressbarFabric -> constructor");
         context = c;
         heightMin = getPixFromDp(70);
         heightMax = getPixFromDp(100);
         heightDiffer = heightMax - heightMin;
+    }
+
+    public void setInterval(Long[] interval) {
         durationInterval = interval;
-        intervalDiffer = durationInterval[1] - durationInterval[0];
+        long differ = durationInterval[1] - durationInterval[0];
+        intervalDiffer = (differ == 0 ? 1 : differ);
         Log.d(MainActivity.TAG, "ProgressbarFabric -> constructor -> durationDiffer: " + intervalDiffer);
     }
 

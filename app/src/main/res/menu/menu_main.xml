@@ -6,6 +6,7 @@
         android:title="@string/menu_library"/>
     <item
         android:id="@+id/menu_file_manager"
+        android:icon="@drawable/ic_folder_open_white_24dp"
         android:title="@string/menu_open"/>
     <item
         android:id="@+id/menu_bookmarks"

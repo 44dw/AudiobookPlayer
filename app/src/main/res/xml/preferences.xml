@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android">
+    <CheckBoxPreference
+        android:key="toChapterEnd"
+        android:summary="@string/pref_summary_to_chapter_end"
+        android:title="@string/pref_title_to_chapter_end">
+    </CheckBoxPreference>
+    <ListPreference
+        android:key="theme"
+        android:entries="@array/pref_entries_theme"
+        android:entryValues="@array/pref_valies_theme"
+        android:title="@string/pref_title_theme"
+        android:dialogTitle="@string/pref_title_theme"
+        android:summary="%s"
+        android:defaultValue="@string/pref_value_theme_default">
+    </ListPreference>
+    <ListPreference
+        android:key="rewindRight"
+        android:entries="@array/pref_entries_rewind"
+        android:entryValues="@array/pref_valies_rewind"
+        android:title="@string/pref_rewind_right"
+        android:dialogTitle="@string/pref_rewind_right"
+        android:summary="%s"
+        android:defaultValue="@string/pref_value_rewind_default">
+    </ListPreference>
+    <ListPreference
+        android:key="rewindLeft"
+        android:title="@string/pref_rewind_left"
+        android:dialogTitle="@string/pref_rewind_left"
+        android:entries="@array/pref_entries_rewind"
+        android:entryValues="@array/pref_valies_rewind"
+        android:defaultValue="@string/pref_value_rewind_default"
+        android:summary="%s">
+    </ListPreference>
+    <ListPreference
+        android:key="remainTime"
+        android:title="@string/pref_remain_title"
+        android:summary="%s"
+        android:entries="@array/pref_entries_remain"
+        android:entryValues="@array/pref_valies_remain"
+        android:defaultValue="@string/pref_value_rewind_default"
+        android:dialogTitle="@string/pref_remain_title"/>
+</PreferenceScreen>

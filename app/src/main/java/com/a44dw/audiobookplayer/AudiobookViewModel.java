@@ -70,8 +70,10 @@ public class AudiobookViewModel extends ViewModel {
     }
 
     public static void updateNowPlayingChapterInPlaylist() {
-        currentPlaylist.updateInPlaylist(nowPlayingFile.getValue());
-        currentPlaylist.setLastPlayedChapterNum(AudiobookViewModel.getNowPlayingFileNumber());
+        if((currentPlaylist != null)&&(nowPlayingFile.getValue() != null)) {
+            currentPlaylist.updateInPlaylist(nowPlayingFile.getValue());
+            currentPlaylist.setLastPlayedChapterNum(AudiobookViewModel.getNowPlayingFileNumber());
+        }
     }
 
     public static int getPlayerStatus() {
@@ -112,4 +114,10 @@ public class AudiobookViewModel extends ViewModel {
         super.onCleared();
     }
 
+    public static void stopPlayingAndReset() {
+        currentPlaylist = null;
+        playlistName.setValue("");
+        nowPlayingFile.setValue(null);
+        nowPlayingFileNumber = 0;
+    }
 }

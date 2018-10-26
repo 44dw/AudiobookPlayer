@@ -21,23 +21,87 @@
     <string name="menu_bookmark">Сделать закладку</string>
     <string name="menu_library">Последние открытые книги</string>
     <string name="menu_bookmarks">Закладки</string>
-    <string name="menu_theme">День/ночь</string>
+    <string name="menu_theme">Тема: день</string>
     <string name="menu_settings">Настройки</string>
     <string name="menu_about">О программе</string>
     <string name="menu_play">Пуск/пауза</string>
     <string name="menu_filemanager_refresh">Обновить</string>
     <string name="menu_filemanager_special">Назначить папкой по умолчанию</string>
-
-    <!-- TODO: Remove or change this placeholder text -->
     <string name="hello_blank_fragment">Hello blank fragment</string>
     <string name="add_bookmark">Закладка добавлена</string>
     <string name="menu_open">Открыть книгу...</string>
     <string name="contextmenu_bookmarks_change">переименовать</string>
     <string name="contextmenu_bookmarks_delete">удалить</string>
-    <string name="bookmark_rename_dialog_title">Редактировать</string>
-    <string name="bookmark_rename_dialog_edit">Новое имя закладки</string>
+    <string name="rename_dialog_title">Редактировать</string>
+    <string name="rename_dialog_edit">Новое имя</string>
     <string name="dialog_positive">ОК</string>
     <string name="dialog_negative">Отмена</string>
     <string name="bookmark_list_item_hint_path">Файл:</string>
     <string name="bookmark_list_item_hint_time">Время</string>
+    <string name="contextmenu_lastbooks_bookmarks">Посмотреть закладки</string>
+    <string name="contextmenu_lastbooks_image">Посмотреть обложку</string>
+    <string name="remove_dialog_checkbox">также удалить файлы на диске</string>
+    <string name="remove_dialog_warning">Внимание! Файлы будут удалены без возможности восстановления!</string>
+    <string name="remove_dialog_title">Следующая книга будет удалена:</string>
+    <string name="unable_remove_files">Кажется, что-то пошло не так! Некоторые файлы не были удалены</string>
+    <string name="contextmenu_lastbooks_null_progress">Сбросить прогресс</string>
+    <string name="menu_remove_listened">Удалить прослушанное</string>
+    <string name="speed_0_5">0.5 x</string>
+    <string name="speed_0_75">0.75 x</string>
+    <string name="speed_1_0">1.0 x</string>
+    <string name="speed_1_25">1.25 x</string>
+    <string name="speed_1_5">1.5 x</string>
+    <string name="speed_1_75">1.75 x</string>
+    <string name="speed_2_0">2.0 x</string>
+    <string name="speed_title">Выберите скорость воспроизведения</string>
+    <string name="rewinds_5">5 сек.</string>
+    <string name="rewinds_10">10 сек.</string>
+    <string name="rewinds_15">15 сек.</string>
+    <string name="rewinds_30">30 сек.</string>
+    <string name="rewinds_60">60 сек.</string>
+    <string name="rewind_title">Установить шаг перемотки</string>
+    <string name="pref_title_to_chapter_end">До конца главы</string>
+    <string name="pref_summary_to_chapter_end">Воспроизведение только до конца главы</string>
+    <string name="pref_title_theme">Выбор темы</string>
+    <string name="pref_remain_title">Оставшееся время</string>
+    <string name="pref_remain_summary">До конца книги или всего непрослушано</string>
+    <string name="pref_rewind_right">Перемотка вперёд</string>
+    <string name="pref_rewind_left">Перемотка назад</string>
+
+    <string-array name="pref_entries_theme">
+        <item>День</item>
+        <item>Ночь</item>
+    </string-array>
+    <string-array name="pref_valies_theme">
+        <item>0</item>
+        <item>1</item>
+    </string-array>
+    <string name="pref_value_theme_default">0</string>
+
+    <string-array name="pref_entries_rewind">
+        <item>5 сек.</item>
+        <item>10 сек.</item>
+        <item>15 сек.</item>
+        <item>30 сек.</item>
+        <item>60 сек.</item>
+    </string-array>
+    <string-array name="pref_valies_rewind">
+        <item>5</item>
+        <item>10</item>
+        <item>15</item>
+        <item>30</item>
+        <item>60</item>
+    </string-array>
+    <string name="pref_value_rewind_default">10</string>
+
+    <string-array name="pref_entries_remain">
+        <item>Всего непрослушано</item>
+        <item>До конца книги</item>
+    </string-array>
+    <string-array name="pref_valies_remain">
+        <item>0</item>
+        <item>1</item>
+    </string-array>
+    <string name="pref_value_remain_default">1</string>
+
 </resources>

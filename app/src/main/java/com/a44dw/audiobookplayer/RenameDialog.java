@@ -15,28 +15,30 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 
-public class BookmarkRenameDialog extends DialogFragment {
+public class RenameDialog extends DialogFragment {
+
+    public static final String EXTRA_NAME = "name";
+    public static final int RENAME_DIALOG_CODE = 1;
+    public static final String RENAME_DIALOG_TAG = "bookmarkRenameDialog";
 
     LayoutInflater inflater;
     EditText newNameEditText;
     LinearLayout holder;
-
-    public BookmarkRenameDialog() {}
 
     @Override
     @NonNull
     public Dialog onCreateDialog(Bundle savedInstanceState) {
         AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
         inflater = getActivity().getLayoutInflater();
-        holder = (LinearLayout) inflater.inflate(R.layout.bookmark_rename_dialog, null);
-        newNameEditText = holder.findViewById(R.id.bookmarkRenameEditText);
+        holder = (LinearLayout) inflater.inflate(R.layout.rename_dialog, null);
+        newNameEditText = holder.findViewById(R.id.renameEditText);
         builder.setView(holder);
-        builder.setTitle(R.string.bookmark_rename_dialog_title);
+        builder.setTitle(R.string.rename_dialog_title);
         builder.setPositiveButton(R.string.dialog_positive, new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialogInterface, int i) {
                 Intent intent = new Intent();
-                intent.putExtra(BookmarkFragment.EXTRA_NAME, newNameEditText.getText().toString());
+                intent.putExtra(EXTRA_NAME, newNameEditText.getText().toString());
                 getTargetFragment().onActivityResult(getTargetRequestCode(), Activity.RESULT_OK, intent);
             }
         });

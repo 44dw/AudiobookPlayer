@@ -14,7 +14,6 @@ public class Book {
 
     private String publicName;
     private String fileName;
-    //private String path;
     private ArrayList<Chapter> chapters;
     private int lastPlayedChapterNum;
     private int percent;
@@ -67,6 +66,7 @@ public class Book {
 
     public Chapter getNext() {
         int nextNum = AudiobookViewModel.getNowPlayingFileNumber() + 1;
+        if(nextNum >= chapters.size()) return null;
         return chapters.get(nextNum);
     }
 

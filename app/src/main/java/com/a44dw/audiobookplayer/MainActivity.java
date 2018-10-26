@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
+import android.content.res.Resources;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.support.annotation.Nullable;
@@ -23,6 +24,8 @@ import android.support.v4.media.session.MediaControllerCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.support.v7.preference.Preference;
+import android.support.v7.preference.PreferenceManager;
 import android.transition.TransitionManager;
 import android.util.Log;
 import android.view.Menu;
@@ -50,6 +53,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.URLConnection;
 import java.util.ArrayList;
+import java.util.Stack;
 
 import static android.view.View.VISIBLE;
 
@@ -79,27 +83,82 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
     FileManagerFragment fileManagerFragment;
     BookmarkFragment bookmarkFragment;
     LastBooksFragment lastBooksFragment;
+    Preferences preferencesFragment;
     OnPlaybackStateChangedListener playbackStateChangedListener;
     public static final String seekBarBroadcastName = "seekBarBroadcastName";
     public static final String playbackStatus = "playbackStatus";
 
-    static private class ActivityStatus {
-        public static status nowIs;
-        private enum status {
-            SHOW_PLAYER_FRAGMENTS,
-            SHOW_FILE_MANAGER,
-            SHOW_BOOKMARKS,
-            SHOW_LAST_BOOKS
+    public class ActivityStatus {
+        public static final int SHOW_PLAYER_FRAGMENTS = 1;
+        public static final int SHOW_FILE_MANAGER = 2;
+        public static final int SHOW_BOOKMARKS = 3;
+        public static final int SHOW_LAST_BOOKS = 4;
+        public static final int SHOW_PREFERENCES = 5;
+        public static final String BACK_STACK_ROOT = "root";
+        public boolean showBookscale;
+
+        private int nowIs;
+
+        public ActivityStatus() {
+            this.showBookscale = true;
         }
 
-        public static boolean showBookscale = true;
+        public int nowIs() {
+            return nowIs;
+        }
+
+        public void nowIs(int now) {
+            Log.d(MainActivity.TAG, "ActivityStatus -> nowIs(): " + now);
+            switch (now) {
+                case(SHOW_PLAYER_FRAGMENTS): {
+                    goToPlayerFragments();
+                    break;
+                }
+                case(SHOW_FILE_MANAGER):
+                case(SHOW_BOOKMARKS):
+                case(SHOW_LAST_BOOKS):
+                case(SHOW_PREFERENCES): {
+                    prepareConstraintSet();
+                    break;
+                }
+            }
+            //обновляем статус
+            this.nowIs = now;
+        }
+
+        public void goBack() {
+            nowIs = SHOW_PLAYER_FRAGMENTS;
+            goToPlayerFragments();
+        }
+
+        private void goToPlayerFragments() {
+            Log.d(MainActivity.TAG, "ActivityStatus -> goToPlayerFragments()");
+
+            ConstraintSet set = new ConstraintSet();
+            set.clone(constraintLayout);
+            set.clear(R.id.playerLayout, ConstraintSet.TOP);
+            set.constrainHeight(R.id.playerLayout, ConstraintSet.WRAP_CONTENT);
+
+            TransitionManager.beginDelayedTransition(constraintLayout);
+
+            set.applyTo(constraintLayout);
+        }
+
+        private void prepareConstraintSet() {
+            ConstraintSet set = new ConstraintSet();
+            set.clone(constraintLayout);
+            set.connect(R.id.playerLayout, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP);
+            set.constrainHeight(R.id.playerLayout, ConstraintSet.MATCH_CONSTRAINT);
+
+            //анимация
+            TransitionManager.beginDelayedTransition(constraintLayout);
+
+            set.applyTo(constraintLayout);
+        }
     }
 
     //View'ы
     private ConstraintLayout constraintLayout;
-    private FrameLayout playerLayout;
-    private FrameLayout bookscaleLayout;
-    private FrameLayout bookinfoLayout;
 
     //ViewModel и всё, что с ней связано
     static AudiobookViewModel model;
@@ -113,19 +172,22 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
     //Класс меню
     Menu menu;
 
+    //Класс статуса
+    public static ActivityStatus status;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Log.d(MainActivity.TAG, "MA -> onCreate()");
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        //устанавливаем значения по умолчанию (при первом запуске приложения)
+        PreferenceManager.setDefaultValues(this, R.xml.preferences, false);
+
         //проверяем разрешения
         verifyPermissions(this);
 
         constraintLayout = findViewById(R.id.constraintLayout);
-        playerLayout = findViewById(R.id.playerLayout);
-        bookscaleLayout = findViewById(R.id.bookScaleLayout);
-        bookinfoLayout = findViewById(R.id.bookInfoLayout);
 
         //прикрепляем сервис и настраиваем медиа-контроллер
         callback = new MediaControllerCompat.Callback() {
@@ -193,6 +255,7 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
         bookInfoFragment = new BookInfoFragment();
         bookmarkFragment = new BookmarkFragment();
         lastBooksFragment = new LastBooksFragment();
+        preferencesFragment = new Preferences();
         playbackStateChangedListener = audioPlayerFragment;
 
         //настраиваем модель
@@ -205,23 +268,27 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
             @Override
             public void onChanged(@Nullable Chapter chapter) {
                 Log.d(MainActivity.TAG, "MA -> nowPlayingFile: onChanged()");
-                if((AudiobookViewModel.getPlaylist() == null)||(AudiobookViewModel.getPlaylist().findInChapters(chapter) == -1)) {
-                    File rootDirectory = chapter.getFile().getParentFile();
-                    Log.d(MainActivity.TAG, "MA -> nowPlayingFile: onChanged(): playlist is empty or another, rootDirectory: " + rootDirectory);
-                    if(AudiobookViewModel.getPlaylist() != null) {
-                        //сохранение старого плейлиста
-                        storageHandler.savePlaylistInStorage(AudiobookViewModel.getPlaylist());
-                    }
-                    //загрузка нового плейлиста
-                    Book newPlaylist = storageHandler.getPlaylist(rootDirectory);
-                    AudiobookViewModel.updatePlaylist(newPlaylist);
-                    AudiobookViewModel.setNowPlayingFileNumber(chapter);
-                    AudiobookViewModel.updatePlaylistName(storageHandler.plName);
-                    //сохраняем плейлист при создании.
-                    storageHandler.savePlaylistInStorage(newPlaylist);
-                } else AudiobookViewModel.setNowPlayingFileNumber(chapter);
+                if(chapter != null) {
+                    if((AudiobookViewModel.getPlaylist() == null)||(AudiobookViewModel.getPlaylist().findInChapters(chapter) == -1)) {
+                        File rootDirectory = chapter.getFile().getParentFile();
+                        Log.d(MainActivity.TAG, "MA -> nowPlayingFile: onChanged(): playlist is empty or another, rootDirectory: " + rootDirectory);
+                        if(AudiobookViewModel.getPlaylist() != null) {
+                            //сохранение старого плейлиста
+                            storageHandler.savePlaylistInStorage(AudiobookViewModel.getPlaylist());
+                        }
+                        //загрузка нового плейлиста
+                        Book newPlaylist = storageHandler.getPlaylist(rootDirectory);
+                        AudiobookViewModel.updatePlaylist(newPlaylist);
+                        AudiobookViewModel.setNowPlayingFileNumber(chapter);
+                        AudiobookViewModel.updatePlaylistName(storageHandler.plName);
+                        //сохраняем плейлист при создании.
+                        storageHandler.savePlaylistInStorage(newPlaylist);
+                    } else AudiobookViewModel.setNowPlayingFileNumber(chapter);
+                }
             }
         });
+
+        if(status == null) status = new ActivityStatus();
 
         if(storageHandler.hasSavedFile()) {
             Log.d(MainActivity.TAG, "MA -> onCreate(): has saved file");
@@ -293,51 +360,71 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
         return mediaController;
     }
 
+    @Override
+    public void goBack() {
+        Log.d(MainActivity.TAG, "MA -> goBack()");
+        if(AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_STOPPED) showMediaPlayerFragments(false);
+        else showMediaPlayerFragments(true);
+        status.goBack();
+    }
+
+    @Override
+    public void onBookmarkInteraction(Integer chNum) {
+        //добавляем или удаляем закладку
+        if (chNum == null) {
+            AudiobookViewModel.addBookmark();
+            if(status.showBookscale) bookScaleFragment.onAddBookmark();
+            Toast.makeText(this,
+                    getString(R.string.add_bookmark),
+                    Toast.LENGTH_SHORT)
+                    .show();
+        } else {
+            if(status.showBookscale) bookScaleFragment.onDeleteBookmark(chNum);
+        }
+    }
+
     //возможно ли перенести launch... методы в ActivityStatus?
     public void showMediaPlayerFragments(boolean flag) {
-        Log.d(MainActivity.TAG, "MA -> launchPlayerFragment()");
 
-        if(ActivityStatus.nowIs != ActivityStatus.status.SHOW_PLAYER_FRAGMENTS) {
-            fragmentTransaction = getSupportFragmentManager().beginTransaction();
-            fragmentTransaction.replace(R.id.playerLayout, audioPlayerFragment);
-            fragmentTransaction.commit();
+        if(status.nowIs() != ActivityStatus.SHOW_PLAYER_FRAGMENTS) {
+            Log.d(MainActivity.TAG, "MA -> launchPlayerFragment()");
+            getSupportFragmentManager().beginTransaction()
+                .replace(R.id.playerLayout, audioPlayerFragment)
+                .commit();
         }
 
         if(flag) {
-            ConstraintSet set = new ConstraintSet();
-            set.clone(constraintLayout);
-
-            set.clear(R.id.bookInfoLayout, ConstraintSet.TOP);
-            set.connect(R.id.bookScaleLayout, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP);
-            set.connect(R.id.bookScaleLayout, ConstraintSet.BOTTOM, R.id.bookInfoLayout, ConstraintSet.TOP);
-            set.connect(R.id.bookInfoLayout, ConstraintSet.BOTTOM, R.id.playerLayout, ConstraintSet.TOP);
-            set.constrainHeight(R.id.bookInfoLayout, ConstraintSet.WRAP_CONTENT);
-            set.connect(R.id.playerLayout, ConstraintSet.BOTTOM, ConstraintSet.PARENT_ID, ConstraintSet.BOTTOM);
-
-            TransitionManager.beginDelayedTransition(constraintLayout);
-
-            set.applyTo(constraintLayout);
-
             showBookInfo();
             showBookScale();
         }
-        ActivityStatus.nowIs = ActivityStatus.status.SHOW_PLAYER_FRAGMENTS;
+
+        status.nowIs(ActivityStatus.SHOW_PLAYER_FRAGMENTS);
     }
 
     private void showBookScale() {
-        Log.d(MainActivity.TAG, "MA -> launchPlayerFragment()");
-        if(ActivityStatus.showBookscale) {
-            if(bookscaleLayout.getVisibility() == View.GONE) bookscaleLayout.setVisibility(VISIBLE);
+        if(status.showBookscale) {
             fragmentTransaction = getSupportFragmentManager().beginTransaction();
-            fragmentTransaction.replace(R.id.bookScaleLayout, bookScaleFragment);
+            if(getSupportFragmentManager().findFragmentById(R.id.bookScaleLayout) == null) {
+                Log.d(MainActivity.TAG, "MA -> showBookScale(): create fragment");
+                fragmentTransaction.add(R.id.bookScaleLayout, bookScaleFragment);
+                //fragmentTransaction.replace(R.id.bookScaleLayout, bookScaleFragment);
+            } else {
+                Log.d(MainActivity.TAG, "MA -> showBookScale(): show fragment");
+                fragmentTransaction.show(bookScaleFragment);
+            }
             fragmentTransaction.commit();
         }
     }
 
     private void showBookInfo() {
-        Log.d(MainActivity.TAG, "MA -> launchBookInfoFragment()");
         fragmentTransaction = getSupportFragmentManager().beginTransaction();
-        fragmentTransaction.replace(R.id.bookInfoLayout, bookInfoFragment);
+        if(getSupportFragmentManager().findFragmentById(R.id.bookInfoLayout) == null) {
+            Log.d(MainActivity.TAG, "MA -> showBookInfo(): create fragment");
+            fragmentTransaction.add(R.id.bookInfoLayout, bookInfoFragment);
+        } else {
+            Log.d(MainActivity.TAG, "MA -> showBookInfo(): show fragment");
+            fragmentTransaction.show(bookInfoFragment);
+        }
         fragmentTransaction.commit();
     }
 
@@ -345,61 +432,34 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
     public void showFileManager(boolean flag) {
         Log.d(MainActivity.TAG, "MA -> showFileManager()");
         if(flag) {
-            ConstraintSet set = new ConstraintSet();
-            set.clone(constraintLayout);
-
-            //отвязываем верх playerLayout от parent, коннектим к его верху bookInfoLayout
-            set.clear(R.id.playerLayout, ConstraintSet.TOP);
-            set.connect(R.id.bookInfoLayout, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP);
-            set.connect(R.id.bookInfoLayout, ConstraintSet.BOTTOM, R.id.playerLayout, ConstraintSet.TOP);
-            set.constrainHeight(R.id.bookInfoLayout, ConstraintSet.MATCH_CONSTRAINT);
-
-            //анимация
-            TransitionManager.beginDelayedTransition(constraintLayout);
-
-            set.applyTo(constraintLayout);
-
-            bookscaleLayout.setVisibility(View.GONE);
-
             fragmentTransaction = getSupportFragmentManager().beginTransaction();
-            fragmentTransaction.replace(R.id.bookInfoLayout, fileManagerFragment);
-            fragmentTransaction.remove(audioPlayerFragment);
-            //fragmentTransaction.replace(R.id.playerLayout, miniPlayerFragment);
+            fragmentTransaction.replace(R.id.playerLayout, fileManagerFragment);
+            hidePlayerFragments();
             fragmentTransaction.commit();
 
-            ActivityStatus.nowIs = ActivityStatus.status.SHOW_FILE_MANAGER;
+            status.nowIs(ActivityStatus.SHOW_FILE_MANAGER);
         } else {
             showMediaPlayerFragments(true);
         }
     }
 
     @Override
-    public void showBookmarks(boolean flag) {
+    public void showBookmarks(boolean flag, String jsonBook) {
         if(flag) {
             Log.d(MainActivity.TAG, "MA -> showBookmarks()");
 
-            ConstraintSet set = new ConstraintSet();
-            set.clone(constraintLayout);
+            //если вызывается из lastbooks fragment - "показать закладки"
+            if(jsonBook != null) {
+                Bundle args = new Bundle();
+                args.putString(BookmarkFragment.BOOKMARK_BUNDLE_KEY, jsonBook);
+                bookmarkFragment.setArguments(args);
+            }
 
-            //отвязываем верх playerLayout от parent, коннектим к его верху bookInfoLayout
-            set.clear(R.id.playerLayout, ConstraintSet.TOP);
-            set.connect(R.id.bookInfoLayout, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP);
-            set.connect(R.id.bookInfoLayout, ConstraintSet.BOTTOM, R.id.playerLayout, ConstraintSet.TOP);
-            set.constrainHeight(R.id.bookInfoLayout, ConstraintSet.MATCH_CONSTRAINT);
-
-            //анимация
-            TransitionManager.beginDelayedTransition(constraintLayout);
-
-            set.applyTo(constraintLayout);
-
-            bookscaleLayout.setVisibility(View.GONE);
-
-            fragmentTransaction = getSupportFragmentManager().beginTransaction();
-            fragmentTransaction.replace(R.id.bookInfoLayout, bookmarkFragment);
-            fragmentTransaction.remove(audioPlayerFragment);
-            //fragmentTransaction.replace(R.id.playerLayout, miniPlayerFragment);
+            fragmentTransaction = getSupportFragmentManager().beginTransaction()
+                    .replace(R.id.playerLayout, bookmarkFragment);
+            hidePlayerFragments();
             fragmentTransaction.commit();
-            ActivityStatus.nowIs = ActivityStatus.status.SHOW_BOOKMARKS;
+            status.nowIs(ActivityStatus.SHOW_BOOKMARKS);
         } else {
             showMediaPlayerFragments(true);
         }
@@ -410,35 +470,50 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
         if(flag) {
             Log.d(MainActivity.TAG, "MA -> showLastBooks()");
 
-            //обновляем файл в плейлисте
-            AudiobookViewModel.updateNowPlayingChapterInPlaylist();
-            //сохраняем плейлист
-            storageHandler.savePlaylistInStorage(AudiobookViewModel.getPlaylist());
-
-            ConstraintSet set = new ConstraintSet();
-            set.clone(constraintLayout);
-
-            //отвязываем верх playerLayout от parent, коннектим к его верху bookInfoLayout
-            set.clear(R.id.playerLayout, ConstraintSet.TOP);
-            set.connect(R.id.bookInfoLayout, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP);
-            set.connect(R.id.bookInfoLayout, ConstraintSet.BOTTOM, R.id.playerLayout, ConstraintSet.TOP);
-            set.constrainHeight(R.id.bookInfoLayout, ConstraintSet.MATCH_CONSTRAINT);
-
-            //анимация
-            TransitionManager.beginDelayedTransition(constraintLayout);
-
-            set.applyTo(constraintLayout);
-
-            bookscaleLayout.setVisibility(View.GONE);
-            fragmentTransaction = getSupportFragmentManager().beginTransaction();
-            fragmentTransaction.replace(R.id.bookInfoLayout, lastBooksFragment);
-            fragmentTransaction.remove(audioPlayerFragment);
-            //fragmentTransaction.replace(R.id.playerLayout, miniPlayerFragment);
+            if((AudiobookViewModel.getPlaylist() != null)&&(nowPlayingFile != null)) {
+                //обновляем файл в плейлисте
+                AudiobookViewModel.updateNowPlayingChapterInPlaylist();
+                //сохраняем плейлист
+                storageHandler.savePlaylistInStorage(AudiobookViewModel.getPlaylist());
+            }
+            fragmentTransaction = getSupportFragmentManager().beginTransaction()
+                    .replace(R.id.playerLayout, lastBooksFragment);
+            hidePlayerFragments();
             fragmentTransaction.commit();
-            ActivityStatus.nowIs = ActivityStatus.status.SHOW_LAST_BOOKS;
+            status.nowIs(ActivityStatus.SHOW_LAST_BOOKS);
         } else {
             showMediaPlayerFragments(true);
         }
+    }
+
+    private void showPreferences() {
+        fragmentTransaction = getSupportFragmentManager().beginTransaction()
+                .replace(R.id.playerLayout, preferencesFragment);
+        hidePlayerFragments();
+        fragmentTransaction.commit();
+        status.nowIs(ActivityStatus.SHOW_PREFERENCES);
+    }
+
+    private void hidePlayerFragments() {
+        Fragment bookInfo = getSupportFragmentManager().findFragmentById(R.id.bookInfoLayout);
+        Fragment bookScale = getSupportFragmentManager().findFragmentById(R.id.bookScaleLayout);
+        if((bookInfo != null)&&(bookInfo.isVisible())) {
+            Log.d(MainActivity.TAG, "MA -> hidePlayerFragments(): hiding bookInfoFragment");
+            fragmentTransaction.hide(bookInfoFragment);
+        }
+        if((bookScale != null)&&(bookScale.isVisible()))  {
+            Log.d(MainActivity.TAG, "MA -> hidePlayerFragments(): hiding bookScaleFragment");
+            fragmentTransaction.hide(bookScaleFragment);
+        }
+    }
+
+    //вызывается из BookmarkFragment, если открывается закладка из другого плейлиста
+    @Override
+    public void updateTime(long time) {
+        Log.d(MainActivity.TAG, "MA -> updateTime(): " + time);
+        Bundle bundle = new Bundle();
+        bundle.putLong(BookmarkFragment.BOOKMARK_TIME_TAG, time);
+        mediaController.getTransportControls().sendCustomAction(BookmarkFragment.BOOKMARK_TIME_TAG, bundle);
     }
 
     @Override
@@ -459,7 +534,7 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
             case R.id.menu_about:
                 return true;
             case R.id.menu_bookmarks:
-                showBookmarks(true);
+                showBookmarks(true, null);
                 return true;
             case R.id.menu_library:
                 showLastBooks(true);
@@ -470,6 +545,7 @@ public class MainActivity extends AppCompatActivity implements OnIterationWithAc
             case R.id.menu_theme:
                 return true;
             case R.id.menu_settings:
+                showPreferences();
                 return true;
             case R.id.menu_play: {
                 switch (AudiobookViewModel.getPlayerStatus()) {

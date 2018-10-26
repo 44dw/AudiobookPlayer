@@ -1,16 +1,19 @@
 package com.a44dw.audiobookplayer;
 
+import android.app.Activity;
 import android.arch.lifecycle.LiveData;
 import android.arch.lifecycle.Observer;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.support.v4.media.session.MediaControllerCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
+import android.support.v7.preference.PreferenceManager;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -18,7 +21,10 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -28,12 +34,17 @@ import java.text.SimpleDateFormat;
 import java.util.Locale;
 
 public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlaybackStateChangedListener,
-                                                             View.OnClickListener {
+                                                             View.OnClickListener,
+                                                             View.OnLongClickListener {
+    public static final String SPEED_CHANGE_TAG = "speedTag";
+
     //View'ы
     ImageButton playPauseButton;
     SeekBar seekBar;
     TextView chapterTitle;
     TextView timeToEndOfChapter;
+    TextView rewindBackText;
+    TextView rewindForwardText;
 
     boolean userIsSeeking = false;
     private SeekbarBroadReceiver seekbarReceiver;
@@ -42,8 +53,8 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
 
     //LiveData objects
     public static LiveData<Chapter> nowPlayingFile;
-
-    public static final String BOOKMARK_TAG = "bookmark";
+    private static float nowSpeed = 1.0f;
+    private int editedRewind;
 
     public AudioPlayerFragment() {}
 
@@ -76,6 +87,16 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
         Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView");
         View view = inflater.inflate(R.layout.fragment_audio_player, container, false);
         playPauseButton = view.findViewById(R.id.playPauseButton);
+        LinearLayout rewindBackLayout = view.findViewById(R.id.rewindBackLayout);
+        LinearLayout rewindForwardLayout = view.findViewById(R.id.rewindForwardLayout);
+        rewindBackText = rewindBackLayout.findViewById(R.id.rewindBackText);
+        rewindForwardText = rewindForwardLayout.findViewById(R.id.rewindForwardText);
+
+        //получение значений дальности перемотки
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        String rewindBack = prefs.getString(Preferences.KEY_REWIND_LEFT, "");
+        String rewindForward = prefs.getString(Preferences.KEY_REWIND_RIGHT, "");
+
         int playPauseImageRecource = (AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PLAYING
                                      ? R.drawable.ic_pause_black_24dp
                                      : R.drawable.ic_play_arrow_black_24dp);
@@ -83,8 +104,12 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
         playPauseButton.setOnClickListener(this);
         view.findViewById(R.id.skipToNextButton).setOnClickListener(this);
         view.findViewById(R.id.skipToPreviousButton).setOnClickListener(this);
-        view.findViewById(R.id.rewindBackButton).setOnClickListener(this);
-        view.findViewById(R.id.rewindForwardButton).setOnClickListener(this);
+        rewindBackLayout.setOnClickListener(this);
+        rewindBackLayout.setOnLongClickListener(this);
+        rewindForwardLayout.setOnClickListener(this);
+        rewindForwardLayout.setOnLongClickListener(this);
+        rewindBackText.setText(rewindBack);
+        rewindForwardText.setText(rewindForward);
         seekBar = view.findViewById(R.id.seekBar);
         timeToEndOfChapter = view.findViewById(R.id.timeToEndOfChapter);
         chapterTitle = view.findViewById(R.id.chapterTitle);
@@ -136,6 +161,7 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
         int id = item.getItemId();
         switch (id) {
             case R.id.menu_speed:
+                showSpeedChangeDialog();
                 return true;
             case R.id.menu_volume:
                 return true;
@@ -147,13 +173,72 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
         }
     }
 
+    private void showSpeedChangeDialog() {
+        SpeedDialog dialog = new SpeedDialog();
+
+        Bundle args = new Bundle();
+        args.putFloat(SpeedDialog.EXTRA_SPEED, nowSpeed);
+        dialog.setArguments(args);
+        dialog.setTargetFragment(this, SpeedDialog.SPEED_DIALOG_CODE);
+        dialog.show(getActivity().getSupportFragmentManager().beginTransaction(), SpeedDialog.SPEED_DIALOG_TAG);
+    }
+
+    private void showRewindChangeDialog() {
+        RewindDialog dialog = new RewindDialog();
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        String sec = (editedRewind == 1 ? prefs.getString(Preferences.KEY_REWIND_RIGHT, "")
+                                        : prefs.getString(Preferences.KEY_REWIND_LEFT, ""));
+        Bundle args = new Bundle();
+        Log.d(MainActivity.TAG, "AudioPlayerFragment -> showRewindChangeDialog(): sec is " + sec);
+        args.putString(RewindDialog.EXTRA_SEC, sec);
+        dialog.setArguments(args);
+        dialog.setTargetFragment(this, RewindDialog.REWIND_DIALOG_CODE);
+        dialog.show(getActivity().getSupportFragmentManager().beginTransaction(), RewindDialog.REWIND_DIALOG_TAG);
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        switch(requestCode) {
+            case SpeedDialog.SPEED_DIALOG_CODE: {
+                if (resultCode == Activity.RESULT_OK) {
+                    float speed = data.getFloatExtra(SpeedDialog.EXTRA_SPEED, 1);
+                    setSpeed(speed);
+                } else if (resultCode == Activity.RESULT_CANCELED){}
+                break;
+            }
+            case RewindDialog.REWIND_DIALOG_CODE: {
+                if(resultCode == Activity.RESULT_OK) {
+                    String sec = data.getStringExtra(RewindDialog.EXTRA_SEC);
+                    Log.d(MainActivity.TAG, "AudioPlayerFragment -> onActivityResult() -> rewind dialog: sec is " + sec);
+                    setRewind(sec);
+                    if(editedRewind == 1) rewindForwardText.setText(String.valueOf(sec));
+                    else rewindBackText.setText(String.valueOf(sec));
+                    break;
+                } else if (resultCode == Activity.RESULT_CANCELED){}
+            }
+        }
+    }
+
+    private void setRewind(String sec) {
+        String key = (editedRewind == 1 ? Preferences.KEY_REWIND_RIGHT : Preferences.KEY_REWIND_LEFT);
+
+        PreferenceManager.getDefaultSharedPreferences(getActivity())
+                .edit()
+                .putString(key, sec)
+                .apply();
+    }
+
+    private void setSpeed(float speed) {
+        nowSpeed = speed;
+        Bundle bundle = new Bundle();
+        bundle.putFloat(SPEED_CHANGE_TAG, speed);
+        if(mediaController == null) mediaController = mActivityListener.getMediaControllerCompat();
+        mediaController.getTransportControls().sendCustomAction(SPEED_CHANGE_TAG, bundle);
+    }
+
     private void addBookmark() {
         Log.d(MainActivity.TAG, "added bookmark");
-        AudiobookViewModel.addBookmark();
-        Toast.makeText(getActivity(),
-                getString(R.string.add_bookmark),
-                Toast.LENGTH_SHORT)
-                .show();
+        mActivityListener.onBookmarkInteraction(null);
     }
 
     @Override
@@ -203,17 +288,24 @@ public class AudioPlayerFragment extends Fragment implements MainActivity.OnPlay
                 mediaController.getTransportControls().skipToPrevious();
                 break;
             }
-            case (R.id.rewindBackButton): {
-                Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> rewindBackButton");
+            case (R.id.rewindBackLayout): {
+                Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> rewindBackLayout");
                 mediaController.getTransportControls().rewind();
                 break;
             }
-            case (R.id.rewindForwardButton): {
-                Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> rewindForwardButton");
+            case (R.id.rewindForwardLayout): {
+                Log.d(MainActivity.TAG, "AudioPlayerFragment -> onCreateView -> onClick -> rewindForwardLayout");
                 mediaController.getTransportControls().fastForward();
                 break;
             }
         }
+    }
+
+    @Override
+    public boolean onLongClick(View v) {
+        editedRewind = (v.getId() == R.id.rewindForwardLayout ? 1 : 0);
+        showRewindChangeDialog();
+        return true;
     }
 
     //вызывается из МА при запуске плеера

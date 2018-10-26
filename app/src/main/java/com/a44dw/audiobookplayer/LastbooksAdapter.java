@@ -27,13 +27,13 @@ public class LastbooksAdapter extends RecyclerView.Adapter {
 
     private ArrayList<String> mData;
     private OnItemClickListener listener;
-    private static final String REGEX_GET_NAME = "\"publicName\":\"([\\w\\d\\s]*)";
+    public static final String REGEX_GET_NAME = "\"publicName\":\"(.*)\"";
     private static final String REGEX_GET_PERCENT = "\"percent\":(\\d*)";
-    private static final String REGEX_GET_FILE = "\"path\":\"([\\w\\d\\s\\/\\.]*)";
+    public static final String REGEX_GET_FILE = "\"path\":\"(.*?)\"";
     private static final String REGEX_GET_DURATION = "\"bookDuration\":([\\d]*)";
     private static final String REGEX_GET_PROGRESS = "\"bookProgress\":([\\d]*)";
     private static final String REGEX_GET_DONE = "\"done\":false";
-    private static final String REGEX_GET_BOOKMARK = "\"bookmarks\":\\[(.*?)\\]";
+    public static final String REGEX_GET_BOOKMARK = "\"bookmarks\":\\[(.*?)\\]";
 
     public LastbooksAdapter(ArrayList<String> data, OnItemClickListener l) {
         mData = data;
@@ -42,6 +42,7 @@ public class LastbooksAdapter extends RecyclerView.Adapter {
 
     public interface OnItemClickListener {
         void onItemClick(View item);
+        void onItemLongClick(View item);
     }
 
     public static class LastbookViewHolder extends RecyclerView.ViewHolder {
@@ -74,17 +75,25 @@ public class LastbooksAdapter extends RecyclerView.Adapter {
             Bitmap img = getDrawable(data);
             progress.setText(df.format(progressValue));
             duration.setText("/" + df.format(durationValue) + " ч.");
+            //TODO isDone(true) в главе не ставится, если пользователь её перемотал. Однако шкала растёт. Получается, книга 100%, но не засчитывается isDone
             if (isDone(data)) holder.setBackgroundColor(ContextCompat.getColor(((LastBooksFragment)listener).getActivity(), R.color.mocassin));
             percent.setText("(" + percentValue + "%)");
             if(img != null) image.setImageBitmap(img);
             scale.setMax((int) durationValue);
             scale.setProgress((int) progressValue);
-            bookmark.setVisibility(View.VISIBLE);
+            if(hasBookmarks(data))bookmark.setVisibility(View.VISIBLE);
 
             holder.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     listener.onItemClick(v);
+                }
+            });
+            holder.setOnLongClickListener(new View.OnLongClickListener() {
+                @Override
+                public boolean onLongClick(View v) {
+                    listener.onItemLongClick(v);
+                    return true;
                 }
             });
         }
@@ -146,7 +155,7 @@ public class LastbooksAdapter extends RecyclerView.Adapter {
             return result;
         }
 
-        private Boolean isDone(String data) {
+        public static Boolean isDone(String data) {
             Pattern pattern = Pattern.compile(REGEX_GET_DONE);
             Matcher matcher = pattern.matcher(data);
             if(matcher.find()) return false;
@@ -155,9 +164,15 @@ public class LastbooksAdapter extends RecyclerView.Adapter {
         private Boolean hasBookmarks(String data) {
             Pattern pattern = Pattern.compile(REGEX_GET_BOOKMARK);
             Matcher matcher = pattern.matcher(data);
-            if(matcher.find()) {
-                if(matcher.group(1).length() > 0) return true;
+
+            while(matcher.find()) {
+                if(matcher.group(1).length() > 0) {
+                    Log.d(MainActivity.TAG, "LastbooksAdapter -> hasBookmarks() is true");
+                    return true;
+                }
+                Log.d(MainActivity.TAG, "LastbooksAdapter -> hasBookmarks() matcher.group(1).length() == 0");
             }
+            Log.d(MainActivity.TAG, "LastbooksAdapter -> hasBookmarks() is false");
             return false;
         }
     }

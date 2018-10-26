@@ -29,6 +29,7 @@ import android.support.v4.media.MediaMetadataCompat;
 import android.support.v4.media.session.MediaButtonReceiver;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
+import android.support.v7.preference.PreferenceManager;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -126,10 +127,13 @@ public class AudiobookService extends LifecycleService {
                 if(chapter != null) {
                     Log.d(MainActivity.TAG, "Service -> onChanged nowPlayingFile: " + chapter.getFile().toString());
                     mediaSessionCallback.onPlay();
-                } else Toast.makeText(getApplicationContext(),
-                        getString(R.string.end_of_dir),
-                        Toast.LENGTH_SHORT)
-                        .show();
+                } else {
+                    mediaSessionCallback.onStop();
+                    Toast.makeText(getApplicationContext(),
+                            getString(R.string.end_of_dir),
+                            Toast.LENGTH_SHORT)
+                            .show();
+                }
             }
         });
     }
@@ -167,7 +171,6 @@ public class AudiobookService extends LifecycleService {
             switch (playerHandler.isPlaying() ? 1 : 0) {
                 //если файл подходит по формату...
                 case(1): {
-                    //AudiobookViewModel.updateNowPlayingMediaDuration(playerHandler.getDuration());
 
                     if(!audioFocusRequested) {
                         Log.d(MainActivity.TAG, "Service -> onPlay() -> request audio focus");
@@ -243,8 +246,6 @@ public class AudiobookService extends LifecycleService {
 
             Book playlist = AudiobookViewModel.getPlaylist();
             Chapter nextCh = playlist.getNext();
-            Log.d(MainActivity.TAG, "Service -> onSkipToNext() -> get new chapter: " + nextCh.getChapter());
-            Log.d(MainActivity.TAG, "Service -> onSkipToNext() -> with progress: " + nextCh.getProgress());
             if(nextCh != null) {
                 AudiobookViewModel.updateNowPlayingFile(nextCh);
             } else {
@@ -276,23 +277,23 @@ public class AudiobookService extends LifecycleService {
 
         @Override
         public void onFastForward() {
-            playerHandler.rewindForward();
-            mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_REWINDING,
-                    PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
-                    1).build());
+            String sec = PreferenceManager.getDefaultSharedPreferences(getApplicationContext())
+                    .getString(Preferences.KEY_REWIND_RIGHT, "10");
+            playerHandler.rewindForward(sec);
         }
 
         @Override
         public void onRewind() {
-            playerHandler.rewindBack();
-            mediaSession.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_REWINDING,
-                    PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
-                    1).build());
+            String sec = PreferenceManager.getDefaultSharedPreferences(getApplicationContext())
+                    .getString(Preferences.KEY_REWIND_LEFT, "10");
+            playerHandler.rewindBack(sec);
         }
 
         @Override
         public void onStop() {
             super.onStop();
+
+            playerHandler.stop();
 
             if(audioFocusRequested) audioFocusRequested = false;
 
@@ -306,6 +307,7 @@ public class AudiobookService extends LifecycleService {
                                           PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
                                           1).build());
             audiobookNotificationManager.doNotificetionOperation(PlaybackStateCompat.STATE_STOPPED);
+
             serviceIsStarted = false;
             stopSelf();
         }
@@ -317,8 +319,15 @@ public class AudiobookService extends LifecycleService {
 
         @Override
         public void onCustomAction(String action, Bundle extras) {
-            if(action == AudioPlayerFragment.BOOKMARK_TAG) {
-                playerHandler.createBookmark();
+            if(action.equals(BookmarkFragment.BOOKMARK_TIME_TAG)) {
+                long time = extras.getLong(BookmarkFragment.BOOKMARK_TIME_TAG);
+                Log.d(MainActivity.TAG, "Service -> OnAudioFocusChangeListener -> onCustomAction(): rewind to " + time);
+                playerHandler.seekTo(time);
+            }
+            if(action.equals(AudioPlayerFragment.SPEED_CHANGE_TAG)) {
+                float speed = extras.getFloat(AudioPlayerFragment.SPEED_CHANGE_TAG);
+                Log.d(MainActivity.TAG, "Service -> OnAudioFocusChangeListener -> onCustomAction(): changing speed to " + speed);
+                playerHandler.setSpeedTo(speed);
             }
         }
     };
@@ -494,8 +503,13 @@ public class AudiobookService extends LifecycleService {
                     Log.d(MainActivity.TAG, "PlayerHandler -> initializeMediaPlayer() -> setOnCompletionListener()");
                     //обязательно вызвать для очистки плеера
                     stop();
+                    boolean toChapterEnd = PreferenceManager.getDefaultSharedPreferences(getApplicationContext())
+                            .getBoolean(Preferences.TO_CHAPTER_END, false);
+
+                    Log.d(MainActivity.TAG, "PlayerHandler -> initializeMediaPlayer() -> setOnCompletionListener() toChapterEnd = " + toChapterEnd);
+
                     //плохо, хорошо бы операции с mediaSessionCallback вывести из PlayerHandler
-                    mediaSessionCallback.onSkipToNext();
+                    if(!toChapterEnd) mediaSessionCallback.onSkipToNext();
                 }
             });
         }
@@ -533,10 +547,10 @@ public class AudiobookService extends LifecycleService {
             player.reset();
         }
 
-        public void rewindBack() {
+        public void rewindBack(String secs) {
             Log.d(MainActivity.TAG, "PlayerHandler -> rewindBack()");
             int playerPosition = player.getCurrentPosition();
-            int newPosition = playerPosition - RETURN_PROGRESS;
+            int newPosition = playerPosition - Integer.parseInt(secs) * 1000;
             player.seekTo(newPosition > 0 ? newPosition : 0);
         }
 
@@ -544,10 +558,10 @@ public class AudiobookService extends LifecycleService {
             player.seekTo(0);
         }
 
-        public void rewindForward() {
+        public void rewindForward(String secs) {
             Log.d(MainActivity.TAG, "PlayerHandler -> rewindForward()");
             int playerPosition = player.getCurrentPosition();
-            int newPosition = playerPosition + 5*1000;
+            int newPosition = playerPosition + Integer.parseInt(secs) * 1000;
             if(newPosition > getDuration()) mediaSessionCallback.onSkipToNext();
             else player.seekTo(newPosition);
         }
@@ -587,11 +601,6 @@ public class AudiobookService extends LifecycleService {
             return metaMap;
         }
 
-        public void createBookmark() {
-            Log.d(MainActivity.TAG, "PlayerHandler -> createBookmark()");
-
-        }
-
         //Обновление seekBar в AudioFragment
         private void startUpdatingCallbackWithPosition() {
             Log.d(MainActivity.TAG, "PlayerHandler -> startUpdatingCallbackWithPosition()");
@@ -622,6 +631,12 @@ public class AudiobookService extends LifecycleService {
                 broadcastIntent.putExtra(MainActivity.playbackStatus, position);
                 broadcastIntent.setAction(MainActivity.seekBarBroadcastName);
                 sendBroadcast(broadcastIntent);
+            }
+        }
+
+        public void setSpeedTo(float newSpeed) {
+            if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                player.setPlaybackParams(player.getPlaybackParams().setSpeed(newSpeed));
             }
         }
     }

@@ -6,10 +6,10 @@
 
 
     <EditText
-        android:id="@+id/bookmarkRenameEditText"
+        android:id="@+id/renameEditText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:ems="10"
-        android:hint="@string/bookmark_rename_dialog_edit"
+        android:hint="@string/rename_dialog_edit"
         android:inputType="textPersonName" />
 </LinearLayout>
