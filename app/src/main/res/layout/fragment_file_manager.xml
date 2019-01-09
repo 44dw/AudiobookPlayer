@@ -7,33 +7,40 @@
     android:layout_height="match_parent"
     tools:context=".FileManagerFragment">
 
-    <LinearLayout
+    <android.support.constraint.ConstraintLayout
         android:id="@+id/fileManagerPathLayout"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:background="@color/pbBackgroundIncative"
+        android:background="@color/paletteFour"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
         <ImageView
             android:id="@+id/fileManagerImageBack"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:paddingBottom="5dp"
-            android:paddingTop="5dp"
-            android:src="@drawable/ic_folder_up" />
+            android:padding="12dp"
+            android:src="@drawable/ic_folder_up"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="@+id/fileManagerPathToDirectory" />
 
         <TextView
             android:id="@+id/fileManagerPathToDirectory"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
             android:gravity="center_vertical"
-            android:layout_weight="8"/>
+            android:paddingBottom="8dp"
+            android:paddingEnd="16dp"
+            android:paddingStart="16dp"
+            android:paddingTop="8dp"
+            android:textColor="@color/paletteOne"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/fileManagerImageBack"
+            app:layout_constraintTop_toTopOf="parent" />
 
-    </LinearLayout>
+    </android.support.constraint.ConstraintLayout>
 
     <android.support.v7.widget.RecyclerView
         android:id="@+id/fileManagerRecyclerView"

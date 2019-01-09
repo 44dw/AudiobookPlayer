@@ -8,12 +8,8 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v4.app.DialogFragment;
-import android.text.Editable;
-import android.text.TextWatcher;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.LinearLayout;
@@ -31,7 +27,6 @@ public class RemoveDialog extends DialogFragment {
     LayoutInflater inflater;
     LinearLayout holder;
     CheckBox checkbox;
-    //TextView bookName;
     TextView warning;
 
     public RemoveDialog() {}
@@ -52,11 +47,12 @@ public class RemoveDialog extends DialogFragment {
                 else warning.setVisibility(View.GONE);
             }
         });
-        for(String name : names) {
-            Log.d(MainActivity.TAG, "RemoveDialog -> onCreateDialog(): name is " + name);
-            TextView nameView = new TextView(getContext());
-            nameView.setText(name);
-            holder.addView(nameView,0);
+        if(names != null) {
+            for(String name : names) {
+                TextView nameView = (TextView) inflater.inflate(R.layout.remove_dialog_item, null);
+                nameView.setText(name);
+                holder.addView(nameView,0);
+            }
         }
         builder.setView(holder);
         builder.setTitle(R.string.remove_dialog_title);

@@ -7,15 +7,6 @@
         android:title="@string/pref_title_to_chapter_end">
     </CheckBoxPreference>
     <ListPreference
-        android:key="theme"
-        android:entries="@array/pref_entries_theme"
-        android:entryValues="@array/pref_valies_theme"
-        android:title="@string/pref_title_theme"
-        android:dialogTitle="@string/pref_title_theme"
-        android:summary="%s"
-        android:defaultValue="@string/pref_value_theme_default">
-    </ListPreference>
-    <ListPreference
         android:key="rewindRight"
         android:entries="@array/pref_entries_rewind"
         android:entryValues="@array/pref_valies_rewind"
@@ -34,11 +25,28 @@
         android:summary="%s">
     </ListPreference>
     <ListPreference
+        android:key="rewindAuto"
+        android:title="@string/pref_rewind_auto"
+        android:dialogTitle="@string/pref_rewind_auto"
+        android:entries="@array/pref_entries_autorewind"
+        android:entryValues="@array/pref_valies_autorewind"
+        android:defaultValue="@string/pref_value_autorewind_default"
+        android:summary="%s">
+    </ListPreference>
+    <ListPreference
         android:key="remainTime"
         android:title="@string/pref_remain_title"
         android:summary="%s"
         android:entries="@array/pref_entries_remain"
         android:entryValues="@array/pref_valies_remain"
-        android:defaultValue="@string/pref_value_rewind_default"
+        android:defaultValue="@string/pref_value_remain_default"
         android:dialogTitle="@string/pref_remain_title"/>
+    <SwitchPreference
+        android:key="bookscaleSwitch"
+        android:title="@string/pref_bookscale_switch"
+        android:defaultValue="true"/>
+    <Preference
+        android:key="rootFolder"
+        android:title="@string/pref_root_folder"
+        android:summary="%s"/>
 </PreferenceScreen>

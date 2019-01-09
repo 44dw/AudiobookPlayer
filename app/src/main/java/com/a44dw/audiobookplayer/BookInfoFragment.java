@@ -2,180 +2,214 @@ package com.a44dw.audiobookplayer;
 
 import android.arch.lifecycle.LiveData;
 import android.arch.lifecycle.Observer;
+import android.arch.lifecycle.ViewModelProviders;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.support.v7.preference.PreferenceManager;
-import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
-import android.widget.LinearLayout;
+import android.widget.CompoundButton;
 import android.widget.Spinner;
+import android.widget.Switch;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import java.io.File;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Locale;
 
-public class BookInfoFragment extends Fragment {
+public class BookInfoFragment extends Fragment implements CompoundButton.OnCheckedChangeListener {
 
-    //View`s
     TextView bookInfoTitle;
-    TextView bookInfoAuthor;
     TextView bookInfoTimeToEnd;
     TextView bookInfoTimeToEndDescr;
+    Switch bookInfoBookscaleSwitch;
     Spinner bookInfoChapterSelectSpinner;
-    View activeItem;
 
-    //счётчик времени до конца книги или всего непрослушанного
+    OnIterationWithActivityListener mActivityListener;
+
+    AudiobookViewModel model;
+
+    BookRepository repository;
+
     int remainTime;
-    //флаг из настроек, как считать время
-    //1 - до конца книги, 2 - всего непрослушано
     String remainFlag;
 
-    //объекты ресивера
-    IntentFilter filter = new IntentFilter(MainActivity.seekBarBroadcastName);
     ChapterPlayBroadReceiver chapterPlayReceiver;
 
-    //объекты LiveData
-    public static LiveData<Chapter> nowPlayingFile;
-    public static LiveData<String> playlistName;
+    public static LiveData<Chapter> currentChapter;
+    public static LiveData<String> currentBookName;
 
-    public ArrayList<Chapter> playlist;
+    @Override
+    public void onAttach(Context c) {
+        super.onAttach(c);
+        if (c instanceof OnIterationWithActivityListener) {
+            mActivityListener = (OnIterationWithActivityListener) c;
+        }
+    }
 
-    //Флаг, позволяющий избежать срабатывания onItemSelected при смене трека в onChanged nowPlayingFile
-    Boolean userSelected = true;
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        repository = BookRepository.getInstance();
 
-    public BookInfoFragment() {}
+        currentChapter = repository.getCurrentChapter();
+        currentBookName = repository.getBookName();
+    }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_book_info, container, false);
         bookInfoTitle = view.findViewById(R.id.bookInfoTitle);
-        bookInfoAuthor = view.findViewById(R.id.bookInfoAuthor);
+        bookInfoTitle.setText(R.string.load);
         bookInfoTimeToEnd = view.findViewById(R.id.bookInfoTimeToEnd);
         bookInfoTimeToEndDescr = view.findViewById(R.id.bookInfoTimeToEndDescr);
         bookInfoChapterSelectSpinner = view.findViewById(R.id.bookInfoChapterSelectSpinner);
-        //на случай, если фрагмент создаётся при пустом плейлисте
+        bookInfoBookscaleSwitch = view.findViewById(R.id.bookInfoBookscaleSwitch);
+        bookInfoBookscaleSwitch.setOnCheckedChangeListener(this);
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        if(prefs.getBoolean(Preferences.SHOW_BOOKSCALE, true)) {
+            bookInfoBookscaleSwitch.setOnCheckedChangeListener(null);
+            bookInfoBookscaleSwitch.setChecked(true);
+            bookInfoBookscaleSwitch.setOnCheckedChangeListener(this);
+        }
+        if(model == null)
+            model = ViewModelProviders.of(getActivity()).get(AudiobookViewModel.class);
+
         bookInfoChapterSelectSpinner.setVisibility(View.GONE);
-
-        bookInfoChapterSelectSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if(userSelected) {
-                    Log.d(MainActivity.TAG, "BookInfoFragment -> onItemSelected() position is " + position);
-                    Chapter newCh = AudiobookViewModel.getPlaylist().getChapters().get(position);
-                    Log.d(MainActivity.TAG, "BookInfoFragment -> onItemSelected() " + newCh.getChapter());
-                    AudiobookViewModel.updateNowPlayingFile(newCh);
-                } else userSelected = true;
-                activeItem = view;
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {}
-        });
-
-        chapterPlayReceiver = new ChapterPlayBroadReceiver();
-        getContext().registerReceiver(chapterPlayReceiver, filter);
+        SpinnerInteractionListener siListener = new SpinnerInteractionListener();
+        bookInfoChapterSelectSpinner.setOnItemSelectedListener(siListener);
+        bookInfoChapterSelectSpinner.setOnTouchListener(siListener);
 
         remainFlag = PreferenceManager.getDefaultSharedPreferences(getActivity())
                 .getString(Preferences.REMAIN_TIME, "1");
         bookInfoTimeToEndDescr.setText((remainFlag.equals("1") ? getString(R.string.bookinfo_to_end) :
                                                                  getString(R.string.bookinfo_unlistened)));
+        currentChapter.observe(this, new Observer<Chapter>() {
+            @Override
+            public void onChanged(@Nullable Chapter chapter) {
+                if(chapter != null) {
+                    setInfo(chapter);
 
-        if(nowPlayingFile == null) {
-            nowPlayingFile = AudiobookViewModel.getNowPlayingFile();
-            nowPlayingFile.observe(this, new Observer<Chapter>() {
-                @Override
-                public void onChanged(@Nullable Chapter chapter) {
-                    Log.d(MainActivity.TAG, "BookInfoFragment -> onChanged nowPlayingFile: setting title and author");
+                    int num = 0;
 
-                    String title = chapter.getTitle();
-                    String author = chapter.getAuthor();
-                    if(title != null) bookInfoTitle.setText(title);
-                    if(author != null) bookInfoAuthor.setText(author);
-
-                    int num = AudiobookViewModel.getNowPlayingFileNumber();
-
-                    userSelected = false;
-                    if(bookInfoChapterSelectSpinner.getSelectedItemPosition() != num) {
+                    if(repository.getBook() != null) {
+                        num = repository.getNowPlayingChapterNumber();
                         bookInfoChapterSelectSpinner.setSelection(num);
                     }
 
-                    //вычисляем время до конца книги при переключении между файлами в рамках одного плейлиста
-                    //если вызвать этот метод сразу после обновления плейлиста, получим NPExeption.
-                    //TODO попробовать перенести timeToEnd в Book
-                    if(playlistName.getValue() != null) {
+                    if((currentBookName.getValue() != null)&&(currentBookName.getValue().length() > 0)) {
                         remainFlag = PreferenceManager.getDefaultSharedPreferences(getActivity())
                                 .getString(Preferences.REMAIN_TIME, "1");
                         remainTime = getRemainTime(num);
+                        setBookRemainTime((int)chapter.progress);
                     }
                 }
-            });
-        }
+            }
+        });
 
-        if(playlistName == null) {
-            playlistName = AudiobookViewModel.getPlaylistName();
-            playlistName.observe(this, new Observer<String>() {
-                @Override
-                public void onChanged(@Nullable String name) {
-                    Book book = AudiobookViewModel.getPlaylist();
-                    playlist = book.getChapters();
+        currentBookName.observe(this, new Observer<String>() {
+            @Override
+            public void onChanged(String name) {
+                if((name.length() > 0)) {
+                    Book book = repository.getBook();
+                    ArrayList<Chapter> playlist = book.chapters;
 
-                    //показываем и заполняем спиннер
                     if(bookInfoChapterSelectSpinner.getVisibility() == View.GONE)
                         bookInfoChapterSelectSpinner.setVisibility(View.VISIBLE);
 
                     BookinfoArrayAdapter adapter = new BookinfoArrayAdapter(getContext(), R.layout.book_info_item, playlist);
                     bookInfoChapterSelectSpinner.setAdapter(adapter);
 
-                    int num = AudiobookViewModel.getNowPlayingFileNumber();
-                    //вычисляем время до конца книги сразу после обновления плейлиста.
+                    int num = repository.getNowPlayingChapterNumber();
                     remainTime = getRemainTime(num);
 
-                    Log.d(MainActivity.TAG, "BookInfoFragment -> onChanged playlistName: prepare bookInfoChapterSelectSpinner: setting selection to " + num);
+                    bookInfoChapterSelectSpinner.setSelection(num);
 
-                    userSelected = false;
-                    if(bookInfoChapterSelectSpinner.getSelectedItemPosition() != num)
-                        bookInfoChapterSelectSpinner.setSelection(num);
+                    if((currentChapter.getValue() != null)&&
+                            (currentChapter.getValue().bId == repository.getBook().bookId))
+                        setInfo(currentChapter.getValue());
+                } else {
+                    bookInfoTitle.setText(R.string.load);
+                    if(bookInfoChapterSelectSpinner.getVisibility() == View.VISIBLE)
+                        bookInfoChapterSelectSpinner.setVisibility(View.GONE);
                 }
-            });
-        }
-
+            }
+        });
         return view;
     }
 
-    //проверяем, не изменились ли настройки подсчёта времени
+    @Override
+    public void onStart() {
+        super.onStart();
+
+        chapterPlayReceiver = new ChapterPlayBroadReceiver();
+        IntentFilter filter = new IntentFilter(MainActivity.SEEK_BAR_BROADCAST_NAME);
+        getContext().registerReceiver(chapterPlayReceiver, filter);
+    }
+
+
+    private void onSwitchCheckedChanged(boolean isChecked) {
+        PreferenceManager.getDefaultSharedPreferences(getActivity())
+                .edit()
+                .putBoolean(Preferences.SHOW_BOOKSCALE, isChecked)
+                .apply();
+
+        mActivityListener.showBookScale(isChecked);
+    }
+
+    void setInfo(Chapter chapter) {
+        String title = chapter.title;
+        String author = chapter.author;
+        String separator = ", ";
+        String info;
+        boolean noTitle = ((title == null)||(title.length() == 0));
+        boolean noAuthor = ((author == null)||(author.length() == 0));
+
+        if(noTitle && noAuthor) info = new File(chapter.filepath).getParentFile().getName();
+        else if (noTitle) info = author;
+        else if (noAuthor) info = title;
+        else info = author + separator + title;
+
+        bookInfoTitle.setText(info);
+    }
+
+    //проверяем, не изменились ли настройки
     @Override
     public void onHiddenChanged(boolean hidden) {
         super.onHiddenChanged(hidden);
         if (!hidden) {
-             String newFlag = PreferenceManager.getDefaultSharedPreferences(getActivity())
-                    .getString(Preferences.REMAIN_TIME, "1");
-             if(!newFlag.equals(remainFlag)) {
-                 int num = AudiobookViewModel.getNowPlayingFileNumber();
+            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getActivity());
+
+            boolean isBookscaleShown = prefs.getBoolean(Preferences.SHOW_BOOKSCALE, true);
+            if(isBookscaleShown != bookInfoBookscaleSwitch.isChecked()) {
+                bookInfoBookscaleSwitch.setOnCheckedChangeListener(null);
+                bookInfoBookscaleSwitch.setChecked(isBookscaleShown);
+                bookInfoBookscaleSwitch.setOnCheckedChangeListener(this);
+            }
+
+            String newFlag = prefs.getString(Preferences.REMAIN_TIME, "1");
+            if(!newFlag.equals(remainFlag)) {
+                 int num = repository.getNowPlayingChapterNumber();
                  remainTime = getRemainTime(num);
                  bookInfoTimeToEndDescr.setText((newFlag.equals("1") ? getString(R.string.bookinfo_to_end) :
                          getString(R.string.bookinfo_unlistened)));
                  remainFlag = newFlag;
-             }
+            }
         }
     }
 
     @Override
-    public void onDestroy() {
-        super.onDestroy();
+    public void onStop() {
+        super.onStop();
         getContext().unregisterReceiver(chapterPlayReceiver);
     }
 
@@ -186,39 +220,77 @@ public class BookInfoFragment extends Fragment {
     }
 
     private int getTimeToEnd(int numInPlaylist) {
-        ArrayList<Chapter> chapters = AudiobookViewModel.getPlaylist().getChapters();
+        ArrayList<Chapter> chapters = repository.getBook().chapters;
         int durationToEnd = 0;
         for(int i=(chapters.size() - 1); i > numInPlaylist; i--) {
             Chapter ch = chapters.get(i);
-            if(ch.isDone()) continue;
-            long duration = ch.getDuration() - ch.getProgress();
+            if(ch.done) continue;
+            long duration = ch.duration - ch.progress;
             durationToEnd += duration;
         }
-        Log.d(MainActivity.TAG, "BookInfoFragment -> getTimeToEnd(): " + durationToEnd);
         return durationToEnd;
     }
 
+    public void setLoad() {
+        if(bookInfoTitle != null) bookInfoTitle.setText(R.string.load);
+    }
+
     private int getTimeUnheard(int numInPlaylist) {
-        ArrayList<Chapter> chapters = AudiobookViewModel.getPlaylist().getChapters();
+        ArrayList<Chapter> chapters = repository.getBook().chapters;
         int durationToEnd = 0;
         for(int i=0; i<chapters.size(); i++) {
             Chapter ch = chapters.get(i);
-            if((ch.isDone())||(i == numInPlaylist)) continue;
-            long duration = ch.getDuration() - ch.getProgress();
+            if((ch.done)||(i == numInPlaylist)) continue;
+            long duration = ch.duration - ch.progress;
             durationToEnd += duration;
         }
-        Log.d(MainActivity.TAG, "BookInfoFragment -> getTimeUnheard(): " + durationToEnd);
         return durationToEnd;
+    }
+
+    public void setBookRemainTime(int position) {
+        Chapter ch = currentChapter.getValue();
+        if(ch != null) {
+            int toChapterEnd = (int)ch.duration - position;
+            int toBookEnd = remainTime + toChapterEnd;
+
+            if(toBookEnd >= 3600 * 1000) bookInfoTimeToEnd.setText(model.longDf.format(toBookEnd));
+            else bookInfoTimeToEnd.setText(model.shortDf.format(toBookEnd));
+        }
+    }
+
+    @Override
+    public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+        onSwitchCheckedChanged(isChecked);
+    }
+
+    public class SpinnerInteractionListener implements AdapterView.OnItemSelectedListener, View.OnTouchListener {
+
+        boolean userSelect = false;
+
+        @Override
+        public boolean onTouch(View v, MotionEvent event) {
+            userSelect = true;
+            return false;
+        }
+
+        @Override
+        public void onItemSelected(AdapterView<?> parent, View view, int pos, long id) {
+            if (userSelect) {
+                Chapter newCh = repository.getBook().chapters.get(pos);
+                repository.updateCurrentChapter(newCh);
+                userSelect = false;
+            }
+        }
+
+        @Override
+        public void onNothingSelected(AdapterView<?> parent) {}
     }
 
     public class ChapterPlayBroadReceiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
-            int position = intent.getIntExtra(MainActivity.playbackStatus, 0);
-            int toChapterEnd = (int)nowPlayingFile.getValue().getDuration() - position;
-            int toBookEnd = remainTime + toChapterEnd;
-            DateFormat df = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
-            bookInfoTimeToEnd.setText(df.format(toBookEnd));
+            int position = intent.getIntExtra(MainActivity.PLAYBACK_STATUS, 0);
+            if(!model.userIsSeeking) setBookRemainTime(position);
         }
     }
 }

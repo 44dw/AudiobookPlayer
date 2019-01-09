@@ -3,16 +3,13 @@ package com.a44dw.audiobookplayer;
 import android.support.annotation.NonNull;
 import android.support.constraint.ConstraintLayout;
 import android.support.v7.widget.RecyclerView;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.io.File;
-import java.net.URLConnection;
 import java.util.ArrayList;
 
 public class FileManagerAdapter extends RecyclerView.Adapter {
@@ -59,7 +56,7 @@ public class FileManagerAdapter extends RecyclerView.Adapter {
         }
     }
 
-    public FileManagerAdapter(ArrayList<File> data, OnItemClickListener l) {
+    FileManagerAdapter(ArrayList<File> data, OnItemClickListener l) {
         mData = data;
         listener = l;
     }
@@ -82,7 +79,6 @@ public class FileManagerAdapter extends RecyclerView.Adapter {
     }
 
     public void changeData(ArrayList<File> newData) {
-        Log.d(MainActivity.TAG, "FileManagerAdapter -> changeData " + newData.toString());
         mData = newData;
         notifyDataSetChanged();
     }

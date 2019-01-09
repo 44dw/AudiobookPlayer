@@ -3,12 +3,19 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content">
+    android:layout_height="wrap_content"
+    android:paddingBottom="6dp">
 
     <TextView
         android:id="@+id/bookmarkListItemText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:textAlignment="center"
+        android:textStyle="bold"
+        android:textColor="@color/paletteOne"
+        android:background="@color/paletteFour"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
@@ -18,41 +25,42 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginEnd="8dp"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="16dp"
         android:paddingStart="4dp"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="@+id/bookmarkListItemText"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/bookmarkListItemText" />
 
     <TextView
         android:id="@+id/bookmarkListItemPath"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
         android:layout_marginStart="8dp"
-        android:layout_marginTop="4dp"
         android:paddingStart="4dp"
         android:textSize="12sp"
-        app:layout_constraintStart_toEndOf="@+id/bookmarkListItemPathHint"
-        app:layout_constraintTop_toBottomOf="@+id/bookmarkListItemText" />
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/bookmarkListItemTimeHint"
+        app:layout_constraintStart_toEndOf="@+id/bookmarkListItemPathHint" />
 
     <TextView
         android:id="@+id/bookmarkListItemPathHint"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
         android:text="@string/bookmark_list_item_hint_path"
         android:textSize="12sp"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/bookmarkListItemText" />
+        app:layout_constraintStart_toStartOf="parent" />
 
     <TextView
         android:id="@+id/bookmarkListItemTimeHint"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginEnd="16dp"
+        android:layout_marginEnd="8dp"
         android:text="@string/bookmark_list_item_hint_time"
+        android:textSize="12sp"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toStartOf="@+id/bookmarkTime"
-        app:layout_constraintTop_toBottomOf="@+id/bookmarkListItemText" />
+        app:layout_constraintEnd_toStartOf="@+id/bookmarkTime" />
 
 </android.support.constraint.ConstraintLayout>

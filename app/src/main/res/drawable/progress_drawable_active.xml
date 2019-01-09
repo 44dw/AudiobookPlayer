@@ -3,11 +3,11 @@
     <item android:id="@android:id/background">
         <shape>
             <stroke
-                android:width="2dp"
+                android:width="3dp"
                 android:color="@color/pbStroke"
                 />
-            <solid android:color="@color/pbBackgroundIncative" />
-            <corners android:radius="10dp" />
+            <solid android:color="@color/paletteOne" />
+            <corners android:radius="8dp" />
         </shape>
     </item>
     <item android:id="@android:id/progress">
@@ -15,8 +15,8 @@
             android:clipOrientation="vertical"
             android:gravity="bottom">
             <shape>
-                <solid android:color="@color/pbScale" />
-                <corners android:radius="10dp" />
+                <solid android:color="@color/paletteFour" />
+                <corners android:radius="8dp" />
             </shape>
         </clip>
     </item>

@@ -57,7 +57,7 @@ public class RenameDialog extends DialogFragment {
         AlertDialog d = (AlertDialog)getDialog();
         if(d != null) {
             final Button positiveButton = d.getButton(Dialog.BUTTON_POSITIVE);
-            positiveButton.setEnabled(false);
+            if(newNameEditText.getText().toString().length() == 0) positiveButton.setEnabled(false);
             newNameEditText.addTextChangedListener(new TextWatcher() {
                 @Override
                 public void beforeTextChanged(CharSequence s, int start, int count, int after) {}

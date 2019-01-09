@@ -5,98 +5,136 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.drawable.Drawable;
 import android.media.MediaMetadataRetriever;
+import android.os.AsyncTask;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
-import android.support.v4.content.ContextCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.view.ActionMode;
 import android.support.v7.widget.DividerItemDecoration;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ProgressBar;
 import android.widget.Toast;
-
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.LinkedHashMap;
+import java.util.concurrent.ExecutionException;
 
-import static com.a44dw.audiobookplayer.FileManagerHandler.pathToCurrentDirectory;
+import static com.a44dw.audiobookplayer.AudiobookService.currentState;
+import static com.a44dw.audiobookplayer.MainActivity.exec;
 
 public class LastBooksFragment extends Fragment implements LastbooksAdapter.OnItemClickListener,
                                                            MainActivity.OnBackPressedListener {
 
-    public static final String fileNameRegex = "\"fileName\":\"(.*?)\"";
+    public static final String editedItemKey = "editedItemKey";
 
-    public static final String publicNameRegex = "(\"publicName\":\")(.*)(\")";
-
-    public static final String doneRegex = "(\"done\":)(true)(,)";
-    public static final String bookProgressRegex = "(\"bookProgress\":)([\\d]*)" ;
-    public static final String progressRegex = "(\"progress\":)([\\d]*)";
-    public static final String lastChapterRegex = "(\"lastPlayedChapterNum\":)(\\d*)";
-    public static final String percentRegex = "(\"percent\":)(\\d*)";
-
-    private View view;
-    private File innerStorage;
-    private File playlistStorage;
     private RecyclerView lastbooksRecyclerView;
     private LastbooksAdapter adapter;
-    private ArrayList<String> jsonBooks;
+    private ArrayList<Book> books;
     LinearLayoutManager manager;
     OnIterationWithActivityListener activityListener;
     private View editedView;
-    private ArrayList<String> editedJsonBook;
+    private ArrayList<Book> editedBook;
     private ActionMode actionMode;
     private MenuItem launchFileManager;
+    ProgressBar progressBar;
+
+    BookRepository repository;
+    static BookplayerDatabase database;
 
     public LastBooksFragment() {}
 
     @Override
-    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        repository = BookRepository.getInstance();
+        database = repository.getDatabase(getContext());
+    }
+
+    @Override
+    public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
-        view = inflater.inflate(R.layout.fragment_last_books, container, false);
-        innerStorage = getActivity().getFilesDir();
-        playlistStorage = new File(innerStorage.getAbsolutePath() + File.separator + "playlists");
-        jsonBooks = getPlaylists();
-        editedJsonBook = new ArrayList<>();
-        lastbooksRecyclerView = view.findViewById(R.id.lastbooksRecyclerView);
-
+        View holder = inflater.inflate(R.layout.fragment_last_books, container, false);
+        editedBook = new ArrayList<>();
+        lastbooksRecyclerView = holder.findViewById(R.id.lastbooksRecyclerView);
+        progressBar = holder.findViewById(R.id.progressBar);
         activityListener = (OnIterationWithActivityListener) getActivity();
-
-        updatePlaylists();
+        if(savedInstanceState != null) {
+            long[] editedBookId = savedInstanceState.getLongArray(editedItemKey);
+            if(editedBookId != null) {
+                if(editedBookId.length > 1) {
+                    BookRepository.BookDaoGetListByIds bookDaoGetListByIds =
+                            new BookRepository.BookDaoGetListByIds();
+                    bookDaoGetListByIds.execute(editedBookId);
+                    try {
+                        ArrayList<Book> books = (ArrayList<Book>) bookDaoGetListByIds.get();
+                        if(books != null) editedBook.addAll(books);
+                    } catch (InterruptedException | ExecutionException e) {
+                        e.printStackTrace();
+                    }
+                } else {
+                    BookRepository.BookDaoGetById bookDaoGetById = new BookRepository.BookDaoGetById();
+                    bookDaoGetById.execute(editedBookId[0]);
+                    try {
+                        Book book = bookDaoGetById.get();
+                        if(book != null) editedBook.add(book);
+                    } catch (InterruptedException | ExecutionException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }
 
         setHasOptionsMenu(true);
-        return view;
+
+        return holder;
+    }
+
+    @Override
+    public void onStart() {
+        books = getBooks();
+        if(books != null) updateBooks();
+
+        new SetDrawable(this).execute(books);
+
+        if(progressBar.getVisibility() == View.VISIBLE)
+            progressBar.setVisibility(View.GONE);
+
+        super.onStart();
+    }
+
+    @Override
+    public void onSaveInstanceState(@NonNull Bundle outState) {
+        if((editedBook != null)&&(editedBook.size() > 0)) {
+            long[] editedBookId = new long[editedBook.size()];
+            for(int i=0; i<editedBook.size(); i++) {
+                editedBookId[i] = editedBook.get(i).bookId;
+            }
+            outState.putLongArray(editedItemKey, editedBookId);
+        }
+        super.onSaveInstanceState(outState);
     }
 
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
-        Log.d(MainActivity.TAG, "LastBooksFragment -> onCreateOptionsMenu");
         inflater.inflate(R.menu.menu_lastbooks, menu);
-        if(AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PLAYING ||
-                AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PAUSED) {
+        if(currentState == PlaybackStateCompat.STATE_PLAYING ||
+                currentState == PlaybackStateCompat.STATE_PAUSED) {
             MenuItem playPause = menu.findItem(R.id.menu_play);
             playPause.setVisible(true);
             playPause.setIcon(
-                    AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PLAYING ?
+                    currentState == PlaybackStateCompat.STATE_PLAYING ?
                             R.drawable.ic_pause_white_24dp :
                             R.drawable.ic_play_arrow_white_24dp
             );
@@ -108,7 +146,6 @@ public class LastBooksFragment extends Fragment implements LastbooksAdapter.OnIt
 
     @Override
     public void onDestroyOptionsMenu() {
-        Log.d(MainActivity.TAG, "LastBooksFragment -> onDestroyOptionsMenu");
         launchFileManager.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         super.onDestroyOptionsMenu();
 
@@ -116,12 +153,10 @@ public class LastBooksFragment extends Fragment implements LastbooksAdapter.OnIt
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        Log.d(MainActivity.TAG, "LastBooksFragment -> onOptionsItemSelected()");
         int id = item.getItemId();
         switch (id) {
             case R.id.menu_remove_listened:
-                //очищаем массив, потому что диалог вызывается не из контекстного меню
-                editedJsonBook.clear();
+                editedBook.clear();
                 showBookRemoveDialog(true);
                 return true;
             default:
@@ -129,64 +164,74 @@ public class LastBooksFragment extends Fragment implements LastbooksAdapter.OnIt
         }
     }
 
-    private void updatePlaylists() {
-        Log.d(MainActivity.TAG, "LastBooksFragment -> updatePlaylists");
+    private void updateBooks() {
         manager = new LinearLayoutManager(getContext());
-        adapter = new LastbooksAdapter(jsonBooks, this);
+        adapter = new LastbooksAdapter(books, this);
         lastbooksRecyclerView.setLayoutManager(manager);
         lastbooksRecyclerView.setAdapter(adapter);
-        //установка разделителя
         DividerItemDecoration dividerItemDecoration = new DividerItemDecoration(lastbooksRecyclerView.getContext(),
                 manager.getOrientation());
         lastbooksRecyclerView.addItemDecoration(dividerItemDecoration);
     }
 
-    private ArrayList<String> getPlaylists() {
-        File[] files = playlistStorage.listFiles();
-        ArrayList<String> books = new ArrayList<>();
-        for(File f : files) {
-            Log.d(MainActivity.TAG, "LastBooksFragment -> getPlaylists(): " + f.toString());
-            try {
-                BufferedReader br = new BufferedReader(new FileReader(f));
-                String jsonPlaylist = br.readLine();
-                books.add(jsonPlaylist);
-            } catch (FileNotFoundException e) {
-                e.printStackTrace();
-            } catch (IOException e) {
-                e.printStackTrace();
+    private ArrayList<Book> getBooks() {
+        BookDaoGetAll bookDaoGetAll = new BookDaoGetAll();
+        bookDaoGetAll.execute();
+        try {
+            ArrayList<Book> bookList = bookDaoGetAll.get();
+            if(bookList != null) {
+                bookList = checkBooks(bookList);
+                return bookList;
+            }
+        } catch (InterruptedException | ExecutionException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    private ArrayList<Book> checkBooks(final ArrayList<Book> bookList) {
+        for(int i=0; i<bookList.size(); i++) {
+            final Book book = bookList.get(i);
+            if(!(new File(book.filepath).exists())) {
+                bookList.remove(i);
+                exec.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        database.bookDao().delete(book);
+                    }
+                });
+                i--;
             }
         }
-        return books;
+        return bookList;
     }
 
     @Override
     public void onItemClick(View item) {
-        Log.d(MainActivity.TAG, "LastBooksFragment -> onItemClick()");
 
-        String jsonBook = (String)item.getTag();
+        if(actionMode != null) return;
 
-        GsonBuilder builder = new GsonBuilder();
-        Gson gson = builder.create();
-        Log.d(MainActivity.TAG, "read book from json " + jsonBook);
-        Book loadedBook = gson.fromJson(jsonBook, Book.class);
+        Book loadedBook = (Book)item.getTag();
 
-        if(!loadedBook.equals(AudiobookViewModel.getPlaylist())) {
-            Log.d(MainActivity.TAG, "selected Book NOT equals playing Book");
-            //достаём последний проигрываемый файл из плейлиста и запускаем
-            int lastPlayedChapterNum = loadedBook.getLastPlayedChapterNum();
-            Chapter startChapter = loadedBook.getChapters().get(lastPlayedChapterNum);
-            AudiobookViewModel.updateNowPlayingFile(startChapter);
+        if(!loadedBook.exists()) {
+            removeBook(loadedBook, false);
+            return;
+        }
+
+        if(!loadedBook.equals(repository.getBook())) {
+            currentState = PlaybackStateCompat.STATE_BUFFERING;
+            repository.openBook(loadedBook.bookId);
         }
         activityListener.showLastBooks(false);
     }
 
     @Override
     public void onItemLongClick(View item) {
-        editedJsonBook.clear();
-        editedView = item;
-        editedView.setBackgroundColor(getActivity().getResources().getColor(R.color.pbBackgroundIncative));
-        editedJsonBook.add((String) item.getTag());
         if(actionMode == null) {
+            editedBook.clear();
+            editedView = item;
+            editedView.setBackgroundColor(getActivity().getResources().getColor(R.color.mocassin));
+            editedBook.add((Book) item.getTag());
             actionMode = ((AppCompatActivity)getContext()).startSupportActionMode(actionModeCallbacks);
         } else actionMode.finish();
     }
@@ -205,7 +250,6 @@ public class LastBooksFragment extends Fragment implements LastbooksAdapter.OnIt
 
         @Override
         public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
-            Log.d(MainActivity.TAG, "LastBooksFragment -> actionModeCallbacks -> onActionItemClicked()");
             switch (item.getItemId()) {
                 case (R.id.contextmenu_lastbooks_change): {
                     showBookRenameDialog();
@@ -216,7 +260,7 @@ public class LastBooksFragment extends Fragment implements LastbooksAdapter.OnIt
                     break;
                 }
                 case (R.id.contextmenu_lastbooks_bookmarks): {
-                    activityListener.showBookmarks(true, editedJsonBook.get(0));
+                    activityListener.showBookmarks(true, editedBook.get(0).bookId);
                     break;
                 }
                 case (R.id.contextmenu_lastbooks_picture): {
@@ -234,76 +278,75 @@ public class LastBooksFragment extends Fragment implements LastbooksAdapter.OnIt
 
         @Override
         public void onDestroyActionMode(ActionMode mode) {
-            Log.d(MainActivity.TAG, "LastBooksFragment -> actionModeCallbacks -> onDestroyActionMode()");
             actionMode = null;
             if(editedView != null) editedView.setBackground(null);
         }
     };
 
     private void showBookPictureDialog() {
-        String pathToFile = "";
-        Pattern pattern = Pattern.compile(LastbooksAdapter.REGEX_GET_FILE, Pattern.UNICODE_CASE);
-        Matcher matcher = pattern.matcher(editedJsonBook.get(0));
-        if(matcher.find()) pathToFile = matcher.group(1);
-        //создаём файл только чтобы проверить
-        File file = new File(pathToFile);
-        if(file.exists()) {
-            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-            retriever.setDataSource(pathToFile);
-            byte[] art = retriever.getEmbeddedPicture();
+        Book book = editedBook.get(0);
 
-            ImageDialog dialog = new ImageDialog();
-            Bundle args = new Bundle();
-            args.putSerializable(ImageDialog.BUNDLE_IMAGE, art);
-            dialog.setArguments(args);
-            dialog.show(getActivity().getSupportFragmentManager().beginTransaction(), ImageDialog.IMAGE_DIALOG_TAG);
+        BookRepository.ChapterDaoGetFirstByBookId chapterDaoGetFirstByBookId =
+                new BookRepository.ChapterDaoGetFirstByBookId();
+        chapterDaoGetFirstByBookId.execute(book.bookId);
+
+        try {
+            Chapter firstCh = chapterDaoGetFirstByBookId.get();
+            if(firstCh.exists()) {
+                MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+                retriever.setDataSource(firstCh.filepath);
+                byte[] art = retriever.getEmbeddedPicture();
+
+                if(art != null) {
+                    ImageDialog dialog = new ImageDialog();
+                    Bundle args = new Bundle();
+                    args.putSerializable(ImageDialog.BUNDLE_IMAGE, art);
+                    dialog.setArguments(args);
+                    dialog.show(getActivity().getSupportFragmentManager(), ImageDialog.IMAGE_DIALOG_TAG);
+                } else {
+                    Toast.makeText(getActivity(),
+                            getString(R.string.no_cover),
+                            Toast.LENGTH_SHORT)
+                            .show();
+                }
+                retriever.release();
+            }
+        } catch (InterruptedException | ExecutionException e) {
+            e.printStackTrace();
         }
     }
 
-    //если false - было вызвано для одной книги, true - для нескольких
     private void showBookRemoveDialog(Boolean multipleChoises) {
         ArrayList<String> names = new ArrayList<>();
         if(!multipleChoises) {
             //извлекаем имя
-            String name = getBookName(editedJsonBook.get(0));
+            String name = editedBook.get(0).publicName;
             if(name.length() > 0) names.add(name);
         } else {
             for(int i=0; i<lastbooksRecyclerView.getChildCount(); i++) {
                 View item = lastbooksRecyclerView.getChildAt(i);
-                String jsonBook = (String) item.getTag();
+                Book book = (Book) item.getTag();
 
                 //извлекаем статус
-                if(LastbooksAdapter.LastbookViewHolder.isDone(jsonBook)) {
-                    editedJsonBook.add(jsonBook);
-                    String name = getBookName(jsonBook);
+                if(book.percent == 100) {
+                    editedBook.add(book);
+                    String name = book.publicName;
                     if(name.length() > 0) names.add(name);
                 }
             }
         }
-        //создаём диалог и добавляем в Bundle имя
         RemoveDialog dialog = new RemoveDialog();
         Bundle args = new Bundle();
         args.putStringArrayList(RemoveDialog.BUNDLE_DEL_FILES, names);
         dialog.setArguments(args);
         dialog.setTargetFragment(this, RemoveDialog.REMOVE_DIALOG_CODE);
-        dialog.show(getActivity().getSupportFragmentManager().beginTransaction(), RemoveDialog.REMOVE_DIALOG_TAG);
-    }
-
-    private String getBookName(String jsonBook) {
-        Pattern pattern = Pattern.compile(LastbooksAdapter.REGEX_GET_NAME);
-        Matcher matcher = pattern.matcher(jsonBook);
-        String result = "";
-        if(matcher.find()) {
-            Log.d(MainActivity.TAG, "LastBooksFragment -> getBookName(): name is " + matcher.group(1));
-            result = matcher.group(1);
-        }
-        return result;
+        dialog.show(getActivity().getSupportFragmentManager(), RemoveDialog.REMOVE_DIALOG_TAG);
     }
 
     private void showBookRenameDialog() {
         RenameDialog dialog = new RenameDialog();
         dialog.setTargetFragment(this, RenameDialog.RENAME_DIALOG_CODE);
-        dialog.show(getActivity().getSupportFragmentManager().beginTransaction(), RenameDialog.RENAME_DIALOG_TAG);
+        dialog.show(getActivity().getSupportFragmentManager(), RenameDialog.RENAME_DIALOG_TAG);
     }
 
     @Override
@@ -312,200 +355,163 @@ public class LastBooksFragment extends Fragment implements LastbooksAdapter.OnIt
             case RenameDialog.RENAME_DIALOG_CODE: {
                 if (resultCode == Activity.RESULT_OK) {
                     String newName = data.getStringExtra(RenameDialog.EXTRA_NAME);
-                    editBookmarkName(newName);
-                } else if (resultCode == Activity.RESULT_CANCELED){}
+                    editBookName(newName);
+                }
 
                 break;
             }
             case RemoveDialog.REMOVE_DIALOG_CODE: {
                 if (resultCode == Activity.RESULT_OK) {
                     Boolean delFilesFromStorage = data.getBooleanExtra(RemoveDialog.EXTRA_DEL_FILES, false);
-                    for(String jsonBook : editedJsonBook) {
-                        removeBook(jsonBook, delFilesFromStorage);
+                    for(Book book : editedBook) {
+                        removeBook(book, delFilesFromStorage);
                     }
-                } else if (resultCode == Activity.RESULT_CANCELED){}
+                }
 
                 break;
             }
         }
     }
 
-    private void removeBook(String jsonBook, Boolean delFilesFromStorage) {
-        //получаем имя файла
-        //TODO дублирование кода!
-        Pattern pathPattern = Pattern.compile(fileNameRegex);
-        Matcher pathMatcher = pathPattern.matcher(jsonBook);
-        String delFilename = "";
-        if(pathMatcher.find()) delFilename = pathMatcher.group(1);
-        Log.d(MainActivity.TAG, "LastBooksFragment -> removeBook() found filename is " + delFilename);
+    private void removeBook(final Book book, Boolean delFilesFromStorage) {
+        String bookPath = book.filepath;
 
         //если удаляемая книга сейчас играет, очистить
-        Book nowPlayingBook = AudiobookViewModel.getPlaylist();
+        Book nowPlayingBook = repository.getBook();
         if(nowPlayingBook != null) {
-            if(nowPlayingBook.getFileName().equals(delFilename)) {
-                AudiobookViewModel.stopPlayingAndReset();
+            if(nowPlayingBook.filepath.equals(bookPath)) {
+                repository.reset();
             }
         }
 
         //если пользователь захотел, удаляем файлы из хранилища
         if(delFilesFromStorage) {
-            if(!removeFiles(jsonBook)) Toast.makeText(getActivity(),
+            if(!removeFiles(book)) Toast.makeText(getActivity(),
                     getString(R.string.unable_remove_files),
                     Toast.LENGTH_SHORT)
                     .show();
         }
 
-        //удаляем файл Book
-        //TODO вынести в отдельный поток
-        File file = new File(playlistStorage, delFilename);
-        if(file.exists()) file.delete();
+        //удаляем из базы
+        exec.execute(new Runnable() {
+            @Override
+            public void run() {
+                database.bookDao().delete(book);
+            }
+        });
 
-        jsonBooks = getPlaylists();
-        adapter.changeData(jsonBooks);
+        books.remove(book);
+        adapter.notifyDataSetChanged();
     }
 
-    private Boolean removeFiles(String jsonBook) {
-        String pathToFileRegex = "\"path\":\"(.*?)\"";
+    private Boolean removeFiles(Book removedBook) {
+        Boolean result = true;
+        File directory = new File(removedBook.filepath);
 
-        Boolean returned = true;
+        BookRepository.ChapterDaoGetAllByBookId chapterDaoGetAllByBookId =
+                new BookRepository.ChapterDaoGetAllByBookId();
+        chapterDaoGetAllByBookId.execute(removedBook.bookId);
 
-        Pattern pattern = Pattern.compile(pathToFileRegex);
-        Matcher matcher = pattern.matcher(jsonBook);
-        File directory = null;
-        //не слишком эффективно
-        //TODO попробовать рекурсию отсюда https://stackoverflow.com/questions/4943629/how-to-delete-a-whole-folder-and-content
-        while(matcher.find()) {
-            File file = new File(matcher.group(1));
-            if(directory == null) directory = file.getParentFile();
-            if(!file.delete()) returned = false;
-            if(directory.listFiles().length == 0) {
-                if(!directory.delete()) returned = false;
+        try {
+            ArrayList<Chapter> chapters = (ArrayList<Chapter>)chapterDaoGetAllByBookId.get();
+            for (Chapter ch : chapters) {
+                File f = new File(ch.filepath);
+                if(f.exists())
+                    if(!f.delete()) result = false;
             }
+        } catch (InterruptedException | ExecutionException e) {
+            e.printStackTrace();
         }
-        return returned;
+
+        if (directory.listFiles().length == 0) directory.delete();
+
+        return result;
     }
 
     private void nullProgress() {
-        if(editedJsonBook != null) {
-            for(int i=0; i<jsonBooks.size(); i++) {
-                String bookFromArray = jsonBooks.get(i);
-                if(editedJsonBook.equals(bookFromArray)) {
-                    //обнуляем прогресс файла
-                    Pattern pattern = Pattern.compile(progressRegex);
-                    Matcher matcher = pattern.matcher(bookFromArray);
-                    String newProgress = "0";
-                    String progressReplacementText = "$1" + newProgress;
-                    String formatted = matcher.replaceAll(progressReplacementText);
-                    Log.d(MainActivity.TAG, "LastBooksFragment -> nullProgress() 0 progress formatted text is " + formatted);
+        if((editedBook != null)&&(editedBook.size() > 0)) {
 
-                    //сбрасываем isDone
-                    pattern = Pattern.compile(doneRegex);
-                    matcher = pattern.matcher(formatted);
-                    String doneReplacementText = "$1" + "false" + "$3";
-                    formatted = matcher.replaceAll(doneReplacementText);
-                    Log.d(MainActivity.TAG, "LastBooksFragment -> nullProgress() false formatted text is " + formatted);
+            final Book book = editedBook.get(0);
 
-                    //обнуляем прогресс книги
-                    pattern = Pattern.compile(bookProgressRegex);
-                    matcher = pattern.matcher(formatted);
-                    formatted = matcher.replaceAll(progressReplacementText);
-                    Log.d(MainActivity.TAG, "LastBooksFragment -> nullProgress() 0 progress book formatted text is " + formatted);
+            book.nullProgress();
 
-                    //обнуляем последнюю прослушанную часть
-                    pattern = Pattern.compile(lastChapterRegex);
-                    matcher = pattern.matcher(formatted);
-                    formatted = matcher.replaceFirst(progressReplacementText);
-                    Log.d(MainActivity.TAG, "LastBooksFragment -> nullProgress() last chapter book formatted text is " + formatted);
+            BookRepository.nullBookProgress(book);
 
-                    //обнуляем процент
-                    pattern = Pattern.compile(percentRegex);
-                    matcher = pattern.matcher(formatted);
-                    formatted = matcher.replaceFirst(progressReplacementText);
-                    Log.d(MainActivity.TAG, "LastBooksFragment -> nullProgress() percent book formatted text is " + formatted);
+            Book nowBook = repository.getBook();
+            if((nowBook != null)&&(nowBook.equals(book))) repository.reset();
 
-                    //записываем все изменения в лист
-                    jsonBooks.set(i, formatted);
-
-                    //получаем имя файла в хранилие
-                    String filename = getFilename(bookFromArray);
-
-                    //записываем файл на диск
-                    //TODO вынести запись в отдельный поток
-                    try {
-                        File file = new File(playlistStorage, filename);
-                        BufferedWriter bw = new BufferedWriter(new FileWriter(file));
-                        bw.write(formatted);
-                        bw.close();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-
-                    //если плейлист текущий, обновляем имя файла и там...
-                    Book nowBook = AudiobookViewModel.getPlaylist();
-                    if(filename.equals(nowBook.getFileName())) {
-                        AudiobookViewModel.stopPlayingAndReset();
-                    }
-                    break;
-                }
-            }
             adapter.notifyDataSetChanged();
         }
     }
 
-    private void editBookmarkName(String name) {
-        if(editedJsonBook != null) {
+    private void editBookName(String name) {
+        if((editedBook != null)&&(editedBook.size() > 0)) {
+            final Book book = editedBook.get(0);
+            book.publicName = name;
 
-            for(int i=0; i<jsonBooks.size(); i++) {
-                String bookFromArray = jsonBooks.get(i);
-                if(editedJsonBook.equals(bookFromArray)) {
-
-                    //меняем имя
-                    Pattern namePattern = Pattern.compile(publicNameRegex);
-                    Matcher nameMatcher = namePattern.matcher(bookFromArray);
-                    String replacementText = "$1" + name + "$3";
-
-                    //получаем форматированную книгу
-                    String formattedBook = nameMatcher.replaceFirst(replacementText);
-                    Log.d(MainActivity.TAG, "LastBooksFragment -> editBookmarkName() replaced text is " + formattedBook);
-                    jsonBooks.set(i, formattedBook);
-
-                    //получаем имя файла в хранилищк
-                    String filename = getFilename(bookFromArray);
-
-                    //записываем файл на диск
-                    //TODO вынести запись в отдельный поток
-                    try {
-                        File file = new File(playlistStorage, filename);
-                        BufferedWriter bw = new BufferedWriter(new FileWriter(file));
-                        bw.write(formattedBook);
-                        bw.close();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-
-                    //если плейлист текущий, обновляем имя файла и там...
-                    Book nowBook = AudiobookViewModel.getPlaylist();
-                    if(filename.equals(nowBook.getFileName())) {
-                        nowBook.setName(name);
-                    }
-                    break;
+            exec.execute(new Runnable() {
+                @Override
+                public void run() {
+                    database.bookDao().update(book);
                 }
-            }
-            adapter.notifyDataSetChanged();
-        }
-    }
+            });
 
-    private String getFilename(String jsonBook) {
-        Pattern pathPattern = Pattern.compile(fileNameRegex);
-        Matcher pathMatcher = pathPattern.matcher(jsonBook);
-        String filename = "";
-        if(pathMatcher.find()) filename = pathMatcher.group(1);
-        Log.d(MainActivity.TAG, "LastBooksFragment -> getFilename() found filename is " + filename);
-        return filename;
+            Book nowBook = repository.getBook();
+            if(book.equals(nowBook)) nowBook.publicName = name;
+        }
+        adapter.notifyDataSetChanged();
     }
 
     @Override
     public void onBackPressed() {
         activityListener.goBack();
+    }
+
+    static private class BookDaoGetAll extends AsyncTask<Void, Void, ArrayList<Book>> {
+        @Override
+        protected ArrayList<Book> doInBackground(Void... voids) {
+            return (ArrayList<Book>) database.bookDao().getAll();
+        }
+    }
+
+    static private class SetDrawable extends AsyncTask<ArrayList<Book>, Void, LinkedHashMap<String, Bitmap>> {
+
+        private final WeakReference<LastBooksFragment> contextWR;
+
+        SetDrawable(LastBooksFragment fragment) {
+            contextWR = new WeakReference<>(fragment);
+        }
+
+        @Override
+        protected LinkedHashMap<String, Bitmap> doInBackground(ArrayList<Book>... bookList) {
+            LinkedHashMap<String, Bitmap> drawableMap = new LinkedHashMap<>();
+            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+            for (Book b : bookList[0]) {
+                File dir = new File(b.filepath);
+                try {
+                    retriever.setDataSource(dir.listFiles()[0].getAbsolutePath());
+                    byte[] art = retriever.getEmbeddedPicture();
+                    if(art != null){
+                        drawableMap.put(b.filepath, BitmapFactory.decodeByteArray(art, 0, art.length));
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            retriever.release();
+            return drawableMap;
+        }
+
+        @Override
+        protected void onPostExecute(LinkedHashMap<String, Bitmap> bitmaps) {
+            if(contextWR != null) {
+                LastBooksFragment fragment = contextWR.get();
+                for(int i=0; i<fragment.books.size(); i++) {
+                    String key = fragment.books.get(i).filepath;
+                    fragment.books.get(i).cover = bitmaps.get(key);
+                }
+                fragment.adapter.notifyDataSetChanged();
+            }
+        }
     }
 }

@@ -2,15 +2,10 @@ package com.a44dw.audiobookplayer;
 
 import android.support.annotation.NonNull;
 import android.support.constraint.ConstraintLayout;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.view.ActionMode;
 import android.support.v7.widget.RecyclerView;
 import android.view.LayoutInflater;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageView;
 import android.widget.TextView;
 
 import java.io.File;
@@ -18,13 +13,14 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Locale;
+import java.util.TimeZone;
 
 public class BookmarkAdapter extends RecyclerView.Adapter  {
 
     private ArrayList<Bookmark> mData;
     private OnItemClickListener listener;
 
-    public BookmarkAdapter(ArrayList<Bookmark> data, OnItemClickListener l) {
+    BookmarkAdapter(ArrayList<Bookmark> data, OnItemClickListener l) {
         mData = data;
         listener = l;
     }
@@ -39,20 +35,22 @@ public class BookmarkAdapter extends RecyclerView.Adapter  {
         public TextView path;
         public TextView time;
         public ConstraintLayout holder;
-        DateFormat df = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
-        public BookmarkViewHolder(ConstraintLayout layout) {
+        DateFormat df;
+        BookmarkViewHolder(ConstraintLayout layout) {
             super(layout);
             holder = layout;
             name = layout.findViewById(R.id.bookmarkListItemText);
             path = layout.findViewById(R.id.bookmarkListItemPath);
             time = layout.findViewById(R.id.bookmarkTime);
+            df = new SimpleDateFormat("HH:mm:ss", Locale.US);
+            df.setTimeZone(TimeZone.getTimeZone("GMT"));
         }
-        public void bind(Bookmark data, final BookmarkAdapter.OnItemClickListener listener) {
-            String filename = new File(data.getPathToFile()).getName();
+        void bind(Bookmark data, final BookmarkAdapter.OnItemClickListener listener) {
+            String filename = new File(data.pathToFile).getName();
             holder.setTag(data);
-            name.setText(data.getName());
+            name.setText(data.name);
             path.setText(filename);
-            time.setText(df.format(data.getTime()));
+            time.setText(df.format(data.time));
             View.OnClickListener oklistener = new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -84,9 +82,4 @@ public class BookmarkAdapter extends RecyclerView.Adapter  {
 
     @Override
     public int getItemCount() {return mData.size();}
-
-    public void changeData(ArrayList<Bookmark> newData) {
-        mData = newData;
-        notifyDataSetChanged();
-    }
 }

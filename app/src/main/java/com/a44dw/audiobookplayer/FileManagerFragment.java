@@ -1,99 +1,116 @@
 package com.a44dw.audiobookplayer;
 
-import android.content.BroadcastReceiver;
+import android.arch.lifecycle.ViewModelProviders;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.os.Bundle;
-import android.os.Environment;
+import android.support.annotation.NonNull;
+import android.support.constraint.ConstraintLayout;
 import android.support.v4.app.Fragment;
-import android.support.v4.app.FragmentManager;
 import android.support.v4.media.session.PlaybackStateCompat;
 import android.support.v7.widget.DividerItemDecoration;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
 import java.util.ArrayList;
 
-import static com.a44dw.audiobookplayer.AudiobookViewModel.fileManagerHandler;
+import static com.a44dw.audiobookplayer.AudiobookService.currentState;
 import static com.a44dw.audiobookplayer.FileManagerHandler.pathToCurrentDirectory;
 
 public class FileManagerFragment extends Fragment implements FileManagerHandler.OnFileManagerIterationWithFragmentListener,
                                                              MainActivity.OnBackPressedListener,
                                                              View.OnClickListener{
 
-    Context context;
-    View view;
-    LinearLayout fileManagerPathLayout;
+    ConstraintLayout fileManagerPathLayout;
+    LinearLayoutManager filesListManager;
     TextView fileManagerPathText;
     FileManagerAdapter adapter;
+    RecyclerView filesList;
     OnIterationWithActivityListener activityListener;
+
+    AudiobookViewModel model;
+    BookRepository repository;
 
     public FileManagerFragment() {}
 
     @Override
     public void onAttach(Context c) {
         super.onAttach(c);
-        context = c;
     }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if(fileManagerHandler == null) fileManagerHandler = new FileManagerHandler(this);
+
+        model = ViewModelProviders.of(this).get(AudiobookViewModel.class);
+        repository = BookRepository.getInstance();
+
+        if(model.fileManagerHandler == null) {
+            model.fileManagerHandler = new FileManagerHandler(this);
+            if(model.fileManagerHandler.checkExternal()) model.fileManagerHandler.goToRoot();
+        } else model.fileManagerHandler.changeFragmentListener(this);
 
         setHasOptionsMenu(true);
     }
 
     @Override
-    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+    public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
-        view = inflater.inflate(R.layout.fragment_file_manager, container, false);
+        View view = inflater.inflate(R.layout.fragment_file_manager, container, false);
 
-        RecyclerView filesList = view.findViewById(R.id.fileManagerRecyclerView);
+        filesList = view.findViewById(R.id.fileManagerRecyclerView);
         fileManagerPathLayout = view.findViewById(R.id.fileManagerPathLayout);
         fileManagerPathLayout.setOnClickListener(this);
         fileManagerPathText = view.findViewById(R.id.fileManagerPathToDirectory);
-        fileManagerHandler.goToRoot();
         fileManagerPathText.setText(getStringPath(pathToCurrentDirectory));
-        LinearLayoutManager manager = new LinearLayoutManager(context);
-        adapter = new FileManagerAdapter(
-                FileManagerHandler.filterData(FileManagerHandler.getRootDirectory()),
-                fileManagerHandler);
-        filesList.setLayoutManager(manager);
-        filesList.setAdapter(adapter);
-        //установка разделителя
-        DividerItemDecoration dividerItemDecoration = new DividerItemDecoration(filesList.getContext(),
-                manager.getOrientation());
-        filesList.addItemDecoration(dividerItemDecoration);
+        filesListManager = new LinearLayoutManager(getActivity());
         activityListener = (OnIterationWithActivityListener) getActivity();
+
+        if(model.fileManagerHandler.checkExternal()) {
+            File cdirectory = pathToCurrentDirectory.get(pathToCurrentDirectory.size()-1);
+            if(!cdirectory.exists()) model.fileManagerHandler.goToRoot();
+            adapter = new FileManagerAdapter(
+                    FileManagerHandler.filterData(pathToCurrentDirectory.get(pathToCurrentDirectory.size()-1)),
+                    model.fileManagerHandler);
+
+            filesList.setLayoutManager(filesListManager);
+            filesList.setAdapter(adapter);
+            DividerItemDecoration dividerItemDecoration = new DividerItemDecoration(filesList.getContext(),
+                    filesListManager.getOrientation());
+            filesList.addItemDecoration(dividerItemDecoration);
+        } else {
+            Toast.makeText(getContext(),
+                    R.string.root_directory_not_available,
+                    Toast.LENGTH_SHORT)
+                    .show();
+        }
 
         return view;
     }
 
     @Override
+    public void onResume() {
+        super.onResume();
+        adapter.changeData(FileManagerHandler.filterData(pathToCurrentDirectory.get(pathToCurrentDirectory.size()-1)));
+    }
+
+    @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
-        Log.d(MainActivity.TAG, "FileManagerFragment -> onCreateOptionsMenu()");
         inflater.inflate(R.menu.menu_filemanager, menu);
-        //проверяем условие, показывать ли иконку play/pause
-        if(AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PLAYING ||
-           AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PAUSED) {
+        if(currentState == PlaybackStateCompat.STATE_PLAYING ||
+                currentState == PlaybackStateCompat.STATE_PAUSED) {
             MenuItem item = menu.findItem(R.id.menu_play);
             item.setVisible(true);
             item.setIcon(
-                    AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PLAYING ?
+                    currentState == PlaybackStateCompat.STATE_PLAYING ?
                             R.drawable.ic_pause_white_24dp :
                             R.drawable.ic_play_arrow_white_24dp
             );
@@ -103,14 +120,13 @@ public class FileManagerFragment extends Fragment implements FileManagerHandler.
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        Log.d(MainActivity.TAG, "FileManagerFragment -> onOptionsItemSelected()");
         int id = item.getItemId();
         switch (id) {
             case R.id.menu_filemanager_refresh:
                 adapter.changeData(FileManagerHandler.filterData(pathToCurrentDirectory.get(pathToCurrentDirectory.size()-1)));
                 return true;
             case R.id.menu_filemanager_special:
-                FileManagerHandler.changeRootDirectory();
+                model.fileManagerHandler.changeRootDirectory();
                 Toast.makeText(getContext(),
                         R.string.change_root_directory,
                         Toast.LENGTH_SHORT)
@@ -134,17 +150,25 @@ public class FileManagerFragment extends Fragment implements FileManagerHandler.
     }
 
     private void goToParentDirectory() {
-        Log.d(MainActivity.TAG, "FileManagerFragment -> goToParentDirectory()");
+        if(pathToCurrentDirectory.size() == 1) return;
         pathToCurrentDirectory.remove(pathToCurrentDirectory.size()-1);
-        adapter.changeData(FileManagerHandler.filterData(pathToCurrentDirectory.get(pathToCurrentDirectory.size()-1)));
+        File openedDirectory = pathToCurrentDirectory.get(pathToCurrentDirectory.size()-1);
+        if (openedDirectory.exists()) {
+            adapter.changeData(FileManagerHandler.filterData(openedDirectory));
+        } else {
+            Toast.makeText(getActivity(),
+                    R.string.false_directory,
+                    Toast.LENGTH_SHORT)
+                    .show();
+            model.fileManagerHandler.goToExternal();
+            adapter.changeData(FileManagerHandler.filterData(pathToCurrentDirectory.get(0)));
+        }
         fileManagerPathText.setText(getStringPath(pathToCurrentDirectory));
     }
 
     @Override
     public void onChooseDirectory(File f) {
-        Log.d(MainActivity.TAG, "FileManagerFragment -> onChooseFile: " + f.toString());
         fileManagerPathText.setText(getStringPath(pathToCurrentDirectory));
-        Log.d(MainActivity.TAG, "FileManagerFragment -> onChooseFile: current directory is " + pathToCurrentDirectory.toString());
         adapter.changeData(FileManagerHandler.filterData(pathToCurrentDirectory.get(pathToCurrentDirectory.size()-1)));
     }
 
@@ -155,12 +179,7 @@ public class FileManagerFragment extends Fragment implements FileManagerHandler.
 
     @Override
     public void onBackPressed() {
-        String currentPath = pathToCurrentDirectory.get(pathToCurrentDirectory.size() - 1).getAbsolutePath();
-        String rootPath = Environment.getExternalStorageDirectory().getAbsolutePath();
-        Log.d(MainActivity.TAG, "FileManagerFragment -> onBackPressed: currentPath: " + currentPath + "\nrootpath: " + rootPath);
-        if(currentPath.equals(rootPath)) {
-            activityListener.goBack();
-        } else goToParentDirectory();
+        activityListener.goBack();
     }
 
     @Override

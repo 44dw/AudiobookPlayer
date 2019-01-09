@@ -1,39 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<android.support.constraint.ConstraintLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<android.support.constraint.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <ProgressBar
-        style="@android:style/Widget.ProgressBar.Horizontal"
+    <com.a44dw.audiobookplayer.UpdatedProgressBar
         android:id="@+id/progressbar"
-        android:layout_centerInParent="true"
+        style="@android:style/Widget.ProgressBar.Horizontal"
         android:layout_width="wrap_content"
         android:layout_height="match_parent"
+        android:layout_centerInParent="true"
         android:max="100"
         android:progress="0"
         android:progressDrawable="@drawable/progress_drawable" />
 
-    <TextView
-        android:id="@+id/progressbarText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="4dp"
-        app:layout_constraintBottom_toBottomOf="@+id/progressbar"
-        app:layout_constraintEnd_toEndOf="@+id/progressbar"
-        app:layout_constraintStart_toStartOf="@+id/progressbar" />
-
     <ImageView
         android:id="@+id/progressbarBookmark"
-        android:layout_width="0dp"
-        android:layout_height="40dp"
+        android:layout_width="12dp"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="6dp"
         android:scaleType="fitStart"
         android:visibility="gone"
         app:layout_constraintEnd_toEndOf="@+id/progressbar"
-        app:layout_constraintStart_toStartOf="@+id/progressbar"
         app:layout_constraintTop_toTopOf="parent"
-        app:srcCompat="@drawable/ic_short_bookmark_orange" />
+        app:srcCompat="@drawable/ic_bookmark_orange_24dp" />
 
 </android.support.constraint.ConstraintLayout>

@@ -12,9 +12,6 @@
         android:id="@+id/menu_bookmarks"
         android:title="@string/menu_bookmarks" />
     <item
-        android:id="@+id/menu_theme"
-        android:title="@string/menu_theme"/>
-    <item
         android:id="@+id/menu_settings"
         android:title="@string/menu_settings"/>
     <item

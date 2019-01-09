@@ -4,12 +4,13 @@
     <item
         android:id="@+id/menu_speed"
         android:title="@string/menu_speed"
-        android:icon="@drawable/ic_av_timer_white_24dp"
+        android:icon="@drawable/ic_snail"
         app:showAsAction="always"/>
     <item
         android:id="@+id/menu_volume"
         android:title="@string/menu_volume"
         android:icon="@drawable/ic_volume_up_white_24dp"
+        android:visible="false"
         app:showAsAction="always"/>
     <item
         android:id="@+id/menu_bookmark"

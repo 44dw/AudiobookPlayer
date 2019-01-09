@@ -1,49 +1,43 @@
 package com.a44dw.audiobookplayer;
 
-import android.util.Log;
-
+import android.arch.persistence.room.Entity;
+import android.arch.persistence.room.Ignore;
+import android.arch.persistence.room.PrimaryKey;
+import android.graphics.Bitmap;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Objects;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-import static com.a44dw.audiobookplayer.AudiobookViewModel.GAP;
-
+@Entity
 public class Book {
 
-    private String publicName;
-    private String fileName;
-    private ArrayList<Chapter> chapters;
-    private int lastPlayedChapterNum;
-    private int percent;
-    private long bookDuration;
-    private long bookProgress;
+    @PrimaryKey(autoGenerate = true)
+    public long bookId;
 
-    public Book(ArrayList<Chapter> chapters) {
-        this.chapters = chapters;
-        publicName = generatePublicName(chapters.get(0).getFile());
-        fileName = generateFileName(chapters.get(0).getFile().getParentFile());
+    public String publicName;
+    public String filepath;
+    public int lastPlayedChapterNum;
+    public int percent;
+    public long bookDuration;
+    public long bookProgress;
+
+    @Ignore
+    public ArrayList<Chapter> chapters;
+
+    @Ignore
+    public Bitmap cover;
+
+    public Book() {}
+
+    public Book(File directory) {
+        filepath = generatePath(directory);
+        publicName = generateName(directory);
         this.percent = 0;
-        this.bookDuration = calcDuration();
         this.bookProgress = 0;
     }
 
-    public static String generateFileName(File dir) {
-        String path = dir.getAbsolutePath();
-        return path.replace("/", "+");
-    }
-
-    public String getName() {
-        return publicName;
-    }
-
-    public void setName(String name) {
-        this.publicName = name;
-    }
-
-    public String getFileName() {
-        return fileName;
+    public boolean exists() {
+        return (new File(filepath).exists());
     }
 
     @Override
@@ -51,39 +45,27 @@ public class Book {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Book book = (Book) o;
-        return Objects.equals(fileName, book.fileName);
+        return Objects.equals(filepath, book.filepath);
     }
 
     @Override
     public int hashCode() {
-
-        return Objects.hash(fileName);
-    }
-
-    public ArrayList<Chapter> getChapters() {
-        return chapters;
-    }
-
-    public Chapter getNext() {
-        int nextNum = AudiobookViewModel.getNowPlayingFileNumber() + 1;
-        if(nextNum >= chapters.size()) return null;
-        return chapters.get(nextNum);
-    }
-
-    public Chapter getPrevious() {
-        int prevNum = AudiobookViewModel.getNowPlayingFileNumber() - 1;
-        return chapters.get(prevNum);
+        return Objects.hash(filepath);
     }
 
     public void updateInPlaylist(Chapter oldChapter) {
-        long nowPlayingPosition = AudiobookViewModel.getNowPlayingPosition();
-        Log.d(MainActivity.TAG, "Book -> updateInPlaylist: getProgress() is " + nowPlayingPosition);
-        Chapter updatedChapter = chapters.get(AudiobookViewModel.getNowPlayingFileNumber());
-        Log.d(MainActivity.TAG, "Book -> updateInPlaylist: updatedChapter is " + updatedChapter.getChapter());
-        updatedChapter.setProgress(nowPlayingPosition);
-        if(nowPlayingPosition > oldChapter.getDuration() - GAP) updatedChapter.setDone(true);
-        else updatedChapter.setDone(false);
-        //пересчитываем прогресс и процент прослушанного
+        int num = BookRepository.getInstance().getNowPlayingChapterNumber();
+        if(chapters.get(num).chapterId == oldChapter.chapterId) {
+            chapters.set(num, oldChapter);
+        } else {
+            for(int i=0; i<chapters.size(); i++) {
+                if(i == num) continue;
+                if(chapters.get(i).chapterId == oldChapter.chapterId) {
+                    chapters.set(i, oldChapter);
+                    break;
+                }
+            }
+        }
         recalcBookProgress();
         recalcPercent();
     }
@@ -91,53 +73,36 @@ public class Book {
     private void recalcBookProgress() {
         this.bookProgress = 0;
         for(Chapter ch : chapters) {
-            long chapterProgress = ch.getProgress();
+            long chapterProgress = ch.progress;
             if(chapterProgress == 0) continue;
-            this.bookProgress += chapterProgress;
+            this.bookProgress += (ch.done ? ch.duration : chapterProgress);
         }
-        Log.d(MainActivity.TAG, "Book -> recalcBookProgress(): " + this.bookProgress);
-    }
-
-    public float getPercent() {
-        return percent;
     }
 
     private void recalcPercent() {
+        if(this.bookDuration == 0) this.bookDuration = calcDuration();
         float perc = (this.bookProgress * 100)/this.bookDuration;
-        Log.d(MainActivity.TAG, "Book -> recalcPercent(): " + perc);
-        this.percent = (int)perc;
+        this.percent = (perc == 99 ? 100 : (int)perc);
     }
 
-    public long getDuration() {
-        return bookDuration;
+    private static String generatePath(File directory) {
+        return directory.getAbsolutePath();
     }
 
-    public long getProgress() {
-        return bookProgress;
+    private static String generateName(File directory) {
+        return directory.getName();
     }
 
-
-    public int getLastPlayedChapterNum() {return lastPlayedChapterNum;}
-
-    public void setLastPlayedChapterNum(int lastPlayedChapterNum) {this.lastPlayedChapterNum = lastPlayedChapterNum;}
-
-    private String generatePublicName(File firstFileInPlaylist) {
-        //возвращает имя директории
-        return firstFileInPlaylist.getParentFile().getName();
-    }
-
-    private long calcDuration() {
-        long duration = 0;
-        for(Chapter ch : chapters) duration += ch.getDuration();
-        Log.d(MainActivity.TAG, "Book -> calcDuration() is " + duration);
+    public long calcDuration() {
+        long duration = 1;
+        for(Chapter ch : chapters) duration += ch.duration;
         return duration;
     }
 
     public int findInChapters(Chapter chapter) {
         for(int i=0; i<chapters.size(); i++) {
             Chapter ch = chapters.get(i);
-            if(ch.getFile().equals(chapter.getFile())) {
-                Log.d(MainActivity.TAG, "Book -> findInChapters(): num of nowPlayingFile is " + i);
+            if(ch.equals(chapter)) {
                 return i;
             }
         }
@@ -148,9 +113,23 @@ public class Book {
     public int findInChapters(String path) {
         for(int i=0; i<chapters.size(); i++) {
             Chapter ch = chapters.get(i);
-            if(ch.getFile().toString().equals(path))
+            if(ch.filepath.equals(path))
                 return i;
         }
         return -1;
+    }
+
+    public void nullProgress() {
+        if(chapters != null) {
+            for (Chapter ch : chapters) {
+                if(ch.progress > 0) {
+                    ch.progress = 0;
+                    if(ch.done) ch.done = false;
+                }
+            }
+        }
+        this.bookProgress = 0;
+        this.percent = 0;
+        this.lastPlayedChapterNum = 0;
     }
 }

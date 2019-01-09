@@ -9,20 +9,18 @@ import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.TextView;
 
+import java.io.File;
 import java.util.ArrayList;
-import java.util.List;
 
 public class BookinfoArrayAdapter extends ArrayAdapter<Chapter> {
 
     private final LayoutInflater mInflater;
-    private final Context mContext;
     private final ArrayList<Chapter> chapterList;
     private final int mRecource;
 
-    public BookinfoArrayAdapter(@NonNull Context context, int resource, @NonNull ArrayList<Chapter> list) {
+    BookinfoArrayAdapter(@NonNull Context context, int resource, @NonNull ArrayList<Chapter> list) {
         super(context, resource, 0, list);
 
-        mContext = context;
         mInflater = LayoutInflater.from(context);
         mRecource = resource;
         chapterList = list;
@@ -44,9 +42,11 @@ public class BookinfoArrayAdapter extends ArrayAdapter<Chapter> {
 
         TextView text = view.findViewById(R.id.bookInfoItemText);
         Chapter ch = chapterList.get(position);
-        //потом заменить на название файла!
-        text.setText(ch.getChapter());
-
+        String chapterName = ch.chapter;
+        if((chapterName == null)||
+                (chapterName.length() == 0))
+            text.setText(new File(ch.filepath).getName());
+        else text.setText(chapterName);
         return view;
     }
 }

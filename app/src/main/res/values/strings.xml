@@ -1,7 +1,7 @@
 <resources>
+    <string name="help_app_name">Snail bookplayer</string>
     <string name="key_path">path</string>
     <string name="key_is_media">is_media</string>
-
     <string name="wrong_file">Неверный формат файла</string>
     <string name="end_of_dir">Достигнут конец каталога</string>
     <string name="no_media">В каталоге не найдено подходящих файлов</string>
@@ -10,7 +10,7 @@
     <string name="bookinfo_unlistened">Всего непрослушано:</string>
     <string name="menu_speed">Скорость воспроизведения</string>
     <string name="menu_volume">Увеличить громкость</string>
-    <string name="app_name">AudiobookPlayer</string>
+    <string name="app_name">Snail bookplayer</string>
     <string name="audiobook_notification_channel">audiobook_notification_channel</string>
     <string name="rewind_back">rewind back</string>
     <string name="rewind_forward">rewind forward</string>
@@ -21,15 +21,13 @@
     <string name="menu_bookmark">Сделать закладку</string>
     <string name="menu_library">Последние открытые книги</string>
     <string name="menu_bookmarks">Закладки</string>
-    <string name="menu_theme">Тема: день</string>
     <string name="menu_settings">Настройки</string>
     <string name="menu_about">О программе</string>
     <string name="menu_play">Пуск/пауза</string>
     <string name="menu_filemanager_refresh">Обновить</string>
     <string name="menu_filemanager_special">Назначить папкой по умолчанию</string>
-    <string name="hello_blank_fragment">Hello blank fragment</string>
     <string name="add_bookmark">Закладка добавлена</string>
-    <string name="menu_open">Открыть книгу...</string>
+    <string name="menu_open">Открыть книгу…</string>
     <string name="contextmenu_bookmarks_change">переименовать</string>
     <string name="contextmenu_bookmarks_delete">удалить</string>
     <string name="rename_dialog_title">Редактировать</string>
@@ -42,7 +40,7 @@
     <string name="contextmenu_lastbooks_image">Посмотреть обложку</string>
     <string name="remove_dialog_checkbox">также удалить файлы на диске</string>
     <string name="remove_dialog_warning">Внимание! Файлы будут удалены без возможности восстановления!</string>
-    <string name="remove_dialog_title">Следующая книга будет удалена:</string>
+    <string name="remove_dialog_title">Следующие книги будут удалены:</string>
     <string name="unable_remove_files">Кажется, что-то пошло не так! Некоторые файлы не были удалены</string>
     <string name="contextmenu_lastbooks_null_progress">Сбросить прогресс</string>
     <string name="menu_remove_listened">Удалить прослушанное</string>
@@ -62,22 +60,47 @@
     <string name="rewind_title">Установить шаг перемотки</string>
     <string name="pref_title_to_chapter_end">До конца главы</string>
     <string name="pref_summary_to_chapter_end">Воспроизведение только до конца главы</string>
-    <string name="pref_title_theme">Выбор темы</string>
     <string name="pref_remain_title">Оставшееся время</string>
     <string name="pref_remain_summary">До конца книги или всего непрослушано</string>
     <string name="pref_rewind_right">Перемотка вперёд</string>
     <string name="pref_rewind_left">Перемотка назад</string>
+    <string name="title_bookmarks">Закладки</string>
+    <string name="title_lastbooks">Библиотека</string>
+    <string name="title_file_manager">Открыть…</string>
+    <string name="bookinfo_show_bookscale">шкала</string>
+    <string name="pref_bookscale_switch">Показать шкалу книги</string>
+    <string name="no_cover">Обложка не найдена!</string>
+    <string name="false_directory">Файл не найден или повреждён!</string>
+    <string name="pref_root_folder">Корневая директория</string>
+    <string name="title_preferences">Настройки</string>
+    <string name="usermenu_open_lastbooks">Открыть библиотеку</string>
+    <string name="usermenu_open_filemanager">Открыть проводник</string>
+    <string name="pref_rewind_auto">Автоперемотка при старте</string>
+    <string name="root_directory_not_available">Хранилище недоступно! Проверьте разрешения.</string>
+    <string name="old_version">Данная функция недоступна в этой версии Android!</string>
+    <string name="load">Загрузка…</string>
+    <string name="help_version">Версия:</string>
+    <string name="help_author">by Дмитрий Ахметшин, все права сохранены</string>
+    <string name="help_mail_button">Написать автору</string>
+    <string name="help_support">Приложение бесплатно, но вы можете поддержать автора через Яндекс Кошелёк: 410016300420540</string>
+    <string name="help_stars">Если вам понравилось приложение, уделите минутку, чтобы оценить его</string>
+    <string name="help_instructions_header">Справка:</string>
+    <string name="help_instructions_bar">Длительное нажатие на шкалу главы показывает её название</string>
+    <string name="title_credits">О программе</string>
+    <string name="help_instructions_chapter">Нажатие на газвание главы выводит список глав</string>
+    <string name="help_instructions_rewind">Длительное нажатие на кнопку быстрой перемотки позволяет выбрать шаг</string>
+    <string name="help_instructions_lastbooks">Длительное нажатие на книгу в меню \"последние книги\" позволяет редактировать/удалить книгу</string>
+    <string name="help_instructions_bookmarks">Длительное нажатие на закладку в меню \"закладки\" позволяет редактировать/удалить закладку</string>
+    <string name="help_preview_header">Над чем сейчас работает разработчик:</string>
+    <string name="preview_artifacts">Устранение ошибок, о которых вы милостиво сообщаете разработчику</string>
+    <string name="preview_themes">Новые темы и всякие приятные глазу мелочи</string>
+    <string name="deny_permissions">Для продолжения необходимо принять разрешения!</string>
+    <string name="preview_optim">Оптимизация приложения</string>
 
     <string-array name="pref_entries_theme">
         <item>День</item>
         <item>Ночь</item>
     </string-array>
-    <string-array name="pref_valies_theme">
-        <item>0</item>
-        <item>1</item>
-    </string-array>
-    <string name="pref_value_theme_default">0</string>
-
     <string-array name="pref_entries_rewind">
         <item>5 сек.</item>
         <item>10 сек.</item>
@@ -94,6 +117,26 @@
     </string-array>
     <string name="pref_value_rewind_default">10</string>
 
+    <string-array name="pref_entries_autorewind">
+        <item>0 сек.</item>
+        <item>3 сек.</item>
+        <item>5 сек.</item>
+        <item>7 сек.</item>
+        <item>10 сек.</item>
+        <item>12 сек.</item>
+        <item>15 сек.</item>
+    </string-array>
+    <string-array name="pref_valies_autorewind">
+        <item>0</item>
+        <item>2</item>
+        <item>5</item>
+        <item>7</item>
+        <item>10</item>
+        <item>12</item>
+        <item>15</item>
+    </string-array>
+    <string name="pref_value_autorewind_default">2</string>
+
     <string-array name="pref_entries_remain">
         <item>Всего непрослушано</item>
         <item>До конца книги</item>
@@ -101,7 +144,9 @@
     <string-array name="pref_valies_remain">
         <item>0</item>
         <item>1</item>
+
     </string-array>
     <string name="pref_value_remain_default">1</string>
+    <string name="err_bookmark">Дождитесь окончания загрузки книги!</string>
 
 </resources>

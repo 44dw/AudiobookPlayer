@@ -1,41 +1,28 @@
 package com.a44dw.audiobookplayer;
 
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.media.MediaMetadataRetriever;
 import android.support.annotation.NonNull;
 import android.support.constraint.ConstraintLayout;
-import android.support.v4.content.ContextCompat;
 import android.support.v7.widget.RecyclerView;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
-
-import java.io.File;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Locale;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.TimeZone;
+import java.util.concurrent.ExecutionException;
 
 public class LastbooksAdapter extends RecyclerView.Adapter {
 
-    private ArrayList<String> mData;
+    private ArrayList<Book> mData;
     private OnItemClickListener listener;
-    public static final String REGEX_GET_NAME = "\"publicName\":\"(.*)\"";
-    private static final String REGEX_GET_PERCENT = "\"percent\":(\\d*)";
-    public static final String REGEX_GET_FILE = "\"path\":\"(.*?)\"";
-    private static final String REGEX_GET_DURATION = "\"bookDuration\":([\\d]*)";
-    private static final String REGEX_GET_PROGRESS = "\"bookProgress\":([\\d]*)";
-    private static final String REGEX_GET_DONE = "\"done\":false";
-    public static final String REGEX_GET_BOOKMARK = "\"bookmarks\":\\[(.*?)\\]";
 
-    public LastbooksAdapter(ArrayList<String> data, OnItemClickListener l) {
+
+    LastbooksAdapter(ArrayList<Book> data, OnItemClickListener l) {
         mData = data;
         listener = l;
     }
@@ -51,11 +38,11 @@ public class LastbooksAdapter extends RecyclerView.Adapter {
         public TextView duration;
         public TextView progress;
         public ImageView image;
-        public ProgressBar scale;
+        ProgressBar scale;
         public ConstraintLayout holder;
         public ImageView bookmark;
-        DateFormat df = new SimpleDateFormat("HH:mm", Locale.getDefault());
-        public LastbookViewHolder(ConstraintLayout layout) {
+        DateFormat df;
+        LastbookViewHolder(ConstraintLayout layout) {
             super(layout);
             holder = layout;
             name = layout.findViewById(R.id.lastbooksName);
@@ -65,22 +52,25 @@ public class LastbooksAdapter extends RecyclerView.Adapter {
             duration = layout.findViewById(R.id.lastbooksDuration);
             progress = layout.findViewById(R.id.lastbooksProgress);
             bookmark = layout.findViewById(R.id.lastbooksBookmark);
+            df = new SimpleDateFormat("HH:mm", Locale.US);
+            df.setTimeZone(TimeZone.getTimeZone("GMT"));
         }
-        public void bind(String data, final LastbooksAdapter.OnItemClickListener listener) {
+        private void bind(Book data, final LastbooksAdapter.OnItemClickListener listener) {
+            //прикрепляем в качестве тэга Book - может быть тяжело
             holder.setTag(data);
-            name.setText(getName(data));
-            long durationValue = getDuration(data);
-            long progressValue = getProgress(data);
-            int percentValue = getPercent(data);
-            Bitmap img = getDrawable(data);
+            name.setText(data.publicName);
+            long durationValue = data.bookDuration;
+            long progressValue = data.bookProgress;
+            int percentValue = data.percent;
             progress.setText(df.format(progressValue));
-            duration.setText("/" + df.format(durationValue) + " ч.");
-            //TODO isDone(true) в главе не ставится, если пользователь её перемотал. Однако шкала растёт. Получается, книга 100%, но не засчитывается isDone
-            if (isDone(data)) holder.setBackgroundColor(ContextCompat.getColor(((LastBooksFragment)listener).getActivity(), R.color.mocassin));
-            percent.setText("(" + percentValue + "%)");
-            if(img != null) image.setImageBitmap(img);
+            String s = "/" + df.format(durationValue) + " ч.";
+            duration.setText(s);
+            s = "(" + percentValue + "%)";
+            percent.setText(s);
+            if(data.cover != null) image.setImageBitmap(data.cover);
             scale.setMax((int) durationValue);
             scale.setProgress((int) progressValue);
+
             if(hasBookmarks(data))bookmark.setVisibility(View.VISIBLE);
 
             holder.setOnClickListener(new View.OnClickListener() {
@@ -98,81 +88,15 @@ public class LastbooksAdapter extends RecyclerView.Adapter {
             });
         }
 
-        private int getPercent(String data) {
-            String result = "";
-            Pattern pattern = Pattern.compile(REGEX_GET_PERCENT);
-            Matcher matcher = pattern.matcher(data);
-            if(matcher.find()) result = matcher.group(1);
-            Log.d(MainActivity.TAG, "LastbooksAdapter -> getPercent() result is: " + result);
-            return Integer.parseInt(result);
-        }
-
-        private String getName(String data) {
-            String result = "";
-            Pattern pattern = Pattern.compile(REGEX_GET_NAME);
-            Matcher matcher = pattern.matcher(data);
-            if(matcher.find()) result = matcher.group(1);
-            Log.d(MainActivity.TAG, "LastbooksAdapter -> getName() result is: " + result);
-            return result;
-        }
-
-        private long getProgress(String data) {
-            String result = "";
-            Pattern pattern = Pattern.compile(REGEX_GET_PROGRESS);
-            Matcher matcher = pattern.matcher(data);
-            if(matcher.find()) result = matcher.group(1);
-            Log.d(MainActivity.TAG, "LastbooksAdapter -> getProgress() result is: " + result);
-            return Long.parseLong(result);
-        }
-
-        private long getDuration(String data) {
-            String result = "";
-            Pattern pattern = Pattern.compile(REGEX_GET_DURATION);
-            Matcher matcher = pattern.matcher(data);
-            if(matcher.find()) result = matcher.group(1);
-            Log.d(MainActivity.TAG, "LastbooksAdapter -> getDuration() result is: " + result);
-            return Long.parseLong(result);
-        }
-
-        private Bitmap getDrawable(String data) {
-            String pathToFile = "";
-            Bitmap result = null;
-            Pattern pattern = Pattern.compile(REGEX_GET_FILE, Pattern.UNICODE_CASE);
-            Matcher matcher = pattern.matcher(data);
-            if(matcher.find()) pathToFile = matcher.group(1);
-            Log.d(MainActivity.TAG, "LastbooksAdapter -> getDrawable() pathToFile is: " + pathToFile);
-            //создаём файл только чтобы проверить
-            File file = new File(pathToFile);
-            if(file.exists()) {
-                Log.d(MainActivity.TAG, "LastbooksAdapter -> getDrawable() file is exists!");
-                MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-                retriever.setDataSource(pathToFile);
-                byte[] art = retriever.getEmbeddedPicture();
-                if(art != null){
-                    result = BitmapFactory.decodeByteArray(art, 0, art.length);
-                }
+        private Boolean hasBookmarks(Book data) {
+            BookRepository.BookmarkDaoGetByBookId bookmarkDaoGetByBookId = new BookRepository.BookmarkDaoGetByBookId();
+            bookmarkDaoGetByBookId.execute(data.bookId);
+            try {
+                ArrayList<Bookmark> bookmarks = bookmarkDaoGetByBookId.get();
+                if(bookmarks.size() > 0) return true;
+            } catch (InterruptedException | ExecutionException e) {
+                e.printStackTrace();
             }
-            return result;
-        }
-
-        public static Boolean isDone(String data) {
-            Pattern pattern = Pattern.compile(REGEX_GET_DONE);
-            Matcher matcher = pattern.matcher(data);
-            if(matcher.find()) return false;
-            return true;
-        }
-        private Boolean hasBookmarks(String data) {
-            Pattern pattern = Pattern.compile(REGEX_GET_BOOKMARK);
-            Matcher matcher = pattern.matcher(data);
-
-            while(matcher.find()) {
-                if(matcher.group(1).length() > 0) {
-                    Log.d(MainActivity.TAG, "LastbooksAdapter -> hasBookmarks() is true");
-                    return true;
-                }
-                Log.d(MainActivity.TAG, "LastbooksAdapter -> hasBookmarks() matcher.group(1).length() == 0");
-            }
-            Log.d(MainActivity.TAG, "LastbooksAdapter -> hasBookmarks() is false");
             return false;
         }
     }
@@ -191,9 +115,4 @@ public class LastbooksAdapter extends RecyclerView.Adapter {
 
     @Override
     public int getItemCount() {return mData.size();}
-
-    public void changeData(ArrayList<String> newData) {
-        mData = newData;
-        notifyDataSetChanged();
-    }
 }

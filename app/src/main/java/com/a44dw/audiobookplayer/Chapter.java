@@ -1,96 +1,77 @@
 package com.a44dw.audiobookplayer;
 
+import android.arch.persistence.room.Entity;
+import android.arch.persistence.room.ForeignKey;
+import android.arch.persistence.room.Ignore;
+import android.arch.persistence.room.PrimaryKey;
 import android.media.MediaMetadataRetriever;
-import android.util.Log;
-import android.widget.ArrayAdapter;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Objects;
 
+import static android.arch.persistence.room.ForeignKey.CASCADE;
+
+@Entity(foreignKeys = @ForeignKey(entity = Book.class, parentColumns = "bookId", childColumns = "bId", onDelete = CASCADE))
 public class Chapter {
 
-    private File file;
+    @PrimaryKey(autoGenerate = true)
+    public long chapterId;
+    public long bId;
 
-    private String author;
-    private String title;
-    private String chapter;
-    private long duration;
-    private long progress;
-    private boolean done;
-    private ArrayList<Bookmark> bookmarks;
+    public String filepath;
+    public String author;
+    public String title;
+    public String chapter;
+    public long duration;
+    public long progress;
+    public boolean done;
+
+    @Ignore
+    public ArrayList<Bookmark> bookmarks;
+
+    public Chapter() {}
 
     public Chapter(File f) {
-        file = f;
+        filepath = f.getAbsolutePath();
         MediaMetadataRetriever metadata = new MediaMetadataRetriever();
-        metadata.setDataSource(f.toString());
-        author = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST);
-        chapter = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE);
-        title = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM);
-        duration = Long.parseLong(metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));
-        progress = 0;
-    }
-
-    public File getFile() {
-        return file;
-    }
-
-    public String getAuthor() {
-        return author;
-    }
-
-    public String getTitle() {
-        return title;
-    }
-
-    public String getChapter() {
-        return chapter;
-    }
-
-    public long getProgress() {
-        return progress;
-    }
-
-    public void setProgress(long progress) {
-        this.progress = progress;
-    }
-
-    public boolean isDone() {
-        return done;
-    }
-
-    public void setDone(boolean done) {
-        this.done = done;
-    }
-
-    public long getDuration() {
-        return duration;
+        try {
+            metadata.setDataSource(f.toString());
+            author = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST);
+            chapter = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE);
+            if(chapter == null) chapter = f.getName();
+            title = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM);
+            duration = Long.parseLong(metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));
+            progress = 0;
+            bId = 0;
+        } catch (Exception e) {
+            e.printStackTrace();
+            filepath = null;
+        } finally {
+            metadata.release();
+        }
     }
 
     public void addBookmark(long time) {
         if(bookmarks == null) bookmarks = new ArrayList<>();
-        bookmarks.add(new Bookmark(this, time));
+        bookmarks.add(new Bookmark(this,
+                                       BookRepository.getInstance().getBook().bookId,
+                                       time));
     }
 
-    public ArrayList<Bookmark> getBookmarks() {
-        return bookmarks;
-    }
-
-    public Bookmark getBookmark(long time) {
-        for(Bookmark b : bookmarks) {
-            if (b.getTime() == time) return b;
+    private Bookmark getBookmark(long time) {
+        if(bookmarks != null) {
+            for(Bookmark b : bookmarks) {
+                if (b.time == time) return b;
+            }
         }
         return null;
     }
-    public void updateBookmark(Bookmark newBookmark) {
-        Bookmark b = getBookmark(newBookmark.getTime());
-        if(b != null) b.setName(newBookmark.getName());
-    }
 
     public void deleteBookmark(Bookmark delBookmark) {
-        Bookmark b = getBookmark(delBookmark.getTime());
-        bookmarks.remove(b);
-        Log.d(MainActivity.TAG, "Chapter -> deleteBookmark(): length of bookmarks now is " + bookmarks.size());
+        Bookmark b = getBookmark(delBookmark.time);
+        if((bookmarks != null)&&(b != null))
+            bookmarks.remove(b);
     }
 
     @Override
@@ -98,12 +79,15 @@ public class Chapter {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Chapter chapter = (Chapter) o;
-        return Objects.equals(file, chapter.file);
+        return Objects.equals(filepath, chapter.filepath);
     }
 
     @Override
     public int hashCode() {
+        return Objects.hash(filepath);
+    }
 
-        return Objects.hash(file);
+    public boolean exists() {
+        return (filepath != null)&&(new File(filepath).exists());
     }
 }

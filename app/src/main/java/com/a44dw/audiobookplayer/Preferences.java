@@ -7,7 +7,9 @@ import android.support.v7.preference.ListPreference;
 import android.support.v7.preference.Preference;
 import android.support.v7.preference.PreferenceFragmentCompat;
 import android.support.v7.preference.PreferenceManager;
-import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
 
 public class Preferences extends PreferenceFragmentCompat implements SharedPreferences.OnSharedPreferenceChangeListener,
                                                                      MainActivity.OnBackPressedListener {
@@ -16,13 +18,35 @@ public class Preferences extends PreferenceFragmentCompat implements SharedPrefe
 
     public static final String KEY_REWIND_RIGHT = "rewindRight";
     public static final String KEY_REWIND_LEFT = "rewindLeft";
+    public static final String KEY_REWIND_AUTO = "rewindAuto";
     public static final String TO_CHAPTER_END = "toChapterEnd";
     public static final String REMAIN_TIME = "remainTime";
+    public static final String SHOW_BOOKSCALE = "bookscaleSwitch";
+    public static final String KEY_ROOT = "rootFolder";
 
     @Override
     public void onCreatePreferences(Bundle bundle, String s) {
         addPreferencesFromResource(R.xml.preferences);
         PreferenceManager.setDefaultValues(getContext(), R.xml.preferences,false);
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        View view = super.onCreateView(inflater, container, savedInstanceState);
+        view.setBackgroundColor(getResources().getColor(R.color.paletteOne));
+
+        SharedPreferences sp = getPreferenceScreen().getSharedPreferences();
+        Preference rootDirectory = findPreference(KEY_ROOT);
+        rootDirectory.setSummary(sp.getString(KEY_ROOT, ""));
+        rootDirectory.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+            @Override
+            public boolean onPreferenceClick(Preference preference) {
+                activityListener.showFileManager(true);
+                return true;
+            }
+        });
+
+        return view;
     }
 
     @Override
@@ -39,7 +63,6 @@ public class Preferences extends PreferenceFragmentCompat implements SharedPrefe
 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
-        Log.d(MainActivity.TAG, "Preferences -> onSharedPreferenceChanged");
         Preference pref = findPreference(key);
 
         if (pref instanceof ListPreference) {

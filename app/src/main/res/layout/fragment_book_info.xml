@@ -3,51 +3,81 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
+    android:layout_height="match_parent"
+    android:background="@color/paletteFour"
     tools:context=".BookInfoFragment">
 
-    <TextView
-        android:id="@+id/bookInfoAuthor"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        android:layout_marginTop="8dp"
-        android:textSize="12sp"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-
-    <TextView
+    <android.support.v7.widget.AppCompatTextView
         android:id="@+id/bookInfoTitle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@color/paletteFour"
+        android:gravity="center"
+        android:paddingBottom="4dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:textColor="@color/paletteOne"
+        android:textSize="14sp"
+        app:autoSizeTextType="uniform"
+        app:layout_constraintBottom_toTopOf="@+id/bookInfoTimeToEnd"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/bookInfoAuthor" />
+        app:layout_constraintTop_toBottomOf="@+id/bookInfoBookscaleSwitch" />
 
     <TextView
         android:id="@+id/bookInfoTimeToEnd"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="8dp"
+        android:layout_width="0dp"
+        android:layout_height="30dp"
+        android:background="@color/paletteOne"
+        android:gravity="center_vertical|start"
+        android:paddingStart="4dp"
+        android:textSize="16sp"
+        app:layout_constraintBottom_toTopOf="@+id/bookInfoChapterSelectSpinner"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/bookInfoTitle" />
+        app:layout_constraintStart_toStartOf="@+id/guideline4" />
 
     <TextView
         android:id="@+id/bookInfoTimeToEndDescr"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="16dp"
+        android:layout_width="0dp"
+        android:layout_height="30dp"
+        android:background="@color/paletteOne"
+        android:gravity="center_vertical|end"
+        android:paddingEnd="4dp"
         android:text="@string/bookinfo_to_end"
+        android:textSize="14sp"
+        app:layout_constraintBottom_toTopOf="@+id/bookInfoChapterSelectSpinner"
         app:layout_constraintEnd_toStartOf="@+id/bookInfoTimeToEnd"
-        app:layout_constraintTop_toBottomOf="@+id/bookInfoTitle" />
+        app:layout_constraintStart_toStartOf="parent" />
 
     <Spinner
         android:id="@+id/bookInfoChapterSelectSpinner"
-        android:layout_width="368dp"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:background="@null"
+
+        android:popupBackground="@color/paletteFour"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/bookInfoTimeToEndDescr" />
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <android.support.constraint.Guideline
+        android:id="@+id/guideline4"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.5" />
+
+    <Switch
+        android:id="@+id/bookInfoBookscaleSwitch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/drawable_bookscale_switch"
+        android:paddingBottom="4dp"
+        android:paddingStart="8dp"
+        android:text="@string/bookinfo_show_bookscale"
+        android:textColor="@color/paletteOne"
+        android:textSize="12sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 
 </android.support.constraint.ConstraintLayout>

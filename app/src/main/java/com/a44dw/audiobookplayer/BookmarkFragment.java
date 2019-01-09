@@ -12,21 +12,18 @@ import android.support.v7.view.ActionMode;
 import android.support.v7.widget.DividerItemDecoration;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-
-import java.io.File;
 import java.util.ArrayList;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.concurrent.ExecutionException;
+
+import static com.a44dw.audiobookplayer.AudiobookService.currentState;
+import static com.a44dw.audiobookplayer.BookRepository.database;
+import static com.a44dw.audiobookplayer.MainActivity.exec;
 
 public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItemClickListener,
                                                           MainActivity.OnBackPressedListener {
@@ -34,43 +31,60 @@ public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItem
     public static final String BOOKMARK_BUNDLE_KEY = "bookmarkBundleKey";
     public static final String BOOKMARK_TIME_TAG = "bookmarkTime";
 
-    private View view;
+    private View editedView;
     private RecyclerView bookmarkRecyclerView;
+
     private BookmarkAdapter adapter;
     LinearLayoutManager manager;
     OnIterationWithActivityListener activityListener;
     private ActionMode actionMode;
+
     private ArrayList<Bookmark> bookmarks;
     private Bookmark editedBookmark;
-    private View editedView;
+    private BookRepository repository;
 
     public BookmarkFragment() {}
 
     @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        repository = BookRepository.getInstance();
+    }
+
+    @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
-        view = inflater.inflate(R.layout.fragment_bookmark, container, false);
-        bookmarkRecyclerView = view.findViewById(R.id.bookmarkRecyclerView);
-        Log.d(MainActivity.TAG, "BookmarkFragment -> onCreateView");
-        activityListener = (OnIterationWithActivityListener) getActivity();
 
+        View holder = inflater.inflate(R.layout.fragment_bookmark, container, false);
+        bookmarkRecyclerView = holder.findViewById(R.id.bookmarkRecyclerView);
+        activityListener = (OnIterationWithActivityListener) getActivity();
         Bundle args = getArguments();
-        bookmarks = (args == null ? getBookmarks() : getBookmarks(args.getString(BOOKMARK_BUNDLE_KEY)));
+        bookmarks = (args == null ? getBookmarks(repository.getBook().bookId) : getBookmarks(args.getLong(BOOKMARK_BUNDLE_KEY)));
         updateBookmarks();
+
+        if(savedInstanceState != null) {
+            Long bookmarkId = savedInstanceState.getLong(BOOKMARK_BUNDLE_KEY);
+            BookRepository.BookmarkDaoGetById bookmarkDaoGetById = new BookRepository.BookmarkDaoGetById();
+            bookmarkDaoGetById.execute(bookmarkId);
+            try {
+                editedBookmark = bookmarkDaoGetById.get();
+            } catch (InterruptedException | ExecutionException e) {
+                e.printStackTrace();
+            }
+        }
         setHasOptionsMenu(true);
-        return view;
+        return holder;
     }
 
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
-        Log.d(MainActivity.TAG, "BookmarkFragment -> onCreateOptionsMenu");
         inflater.inflate(R.menu.menu_bookmarks, menu);
-        if(AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PLAYING ||
-                AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PAUSED) {
+        if(currentState == PlaybackStateCompat.STATE_PLAYING ||
+                currentState == PlaybackStateCompat.STATE_PAUSED) {
             MenuItem item = menu.findItem(R.id.menu_play);
             item.setVisible(true);
             item.setIcon(
-                    AudiobookViewModel.getPlayerStatus() == PlaybackStateCompat.STATE_PLAYING ?
+                    currentState == PlaybackStateCompat.STATE_PLAYING ?
                             R.drawable.ic_pause_white_24dp :
                             R.drawable.ic_play_arrow_white_24dp
             );
@@ -78,73 +92,56 @@ public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItem
         super.onCreateOptionsMenu(menu, inflater);
     }
 
+    @Override
+    public void onSaveInstanceState(@NonNull Bundle outState) {
+        if(editedBookmark != null) {
+            long bookmarkId = editedBookmark.bookmarkId;
+            outState.putLong(BOOKMARK_BUNDLE_KEY, bookmarkId);
+        }
+        super.onSaveInstanceState(outState);
+    }
 
     public void updateBookmarks() {
-        Log.d(MainActivity.TAG, "BookmarkFragment -> updateBookmarks");
         manager = new LinearLayoutManager(getContext());
         adapter = new BookmarkAdapter(bookmarks, this);
         bookmarkRecyclerView.setLayoutManager(manager);
         bookmarkRecyclerView.setAdapter(adapter);
-        //установка разделителя
         DividerItemDecoration dividerItemDecoration = new DividerItemDecoration(bookmarkRecyclerView.getContext(),
                 manager.getOrientation());
         bookmarkRecyclerView.addItemDecoration(dividerItemDecoration);
     }
 
-    private ArrayList<Bookmark> getBookmarks() {
-        Book book = AudiobookViewModel.getPlaylist();
-        ArrayList<Chapter> chapters;
-        chapters = ((book != null) ? book.getChapters() : new ArrayList<Chapter>());
+    private ArrayList<Bookmark> getBookmarks(Long bookId) {
+
         ArrayList<Bookmark> bookmarkList = new ArrayList<>();
 
-        for(Chapter ch : chapters) {
-            if(ch.getBookmarks() != null) {
-                if(ch.getBookmarks().size() != 0) {
-                    bookmarkList.addAll(ch.getBookmarks());
-                }
-            }
+        BookRepository.BookmarkDaoGetByBookId bookmarkDaoGetByBookId = new BookRepository.BookmarkDaoGetByBookId();
+        bookmarkDaoGetByBookId.execute(bookId);
+
+        try {
+            bookmarkList = bookmarkDaoGetByBookId.get();
+        } catch (InterruptedException | ExecutionException e) {
+            e.printStackTrace();
         }
-        return bookmarkList;
-    }
-
-    private ArrayList<Bookmark> getBookmarks(String jsonBook) {
-        ArrayList<Bookmark> bookmarkList = new ArrayList<>();
-
-        GsonBuilder builder = new GsonBuilder();
-        Gson gson = builder.create();
-        Pattern pattern = Pattern.compile(LastbooksAdapter.REGEX_GET_BOOKMARK);
-        Matcher matcher = pattern.matcher(jsonBook);
-        if(matcher.find()) bookmarkList.add(gson.fromJson(matcher.group(1), Bookmark.class));
 
         return bookmarkList;
-    }
-
-    private void openBookmark(Bookmark b) {
-        int numInPl = AudiobookViewModel.getPlaylist().findInChapters(b.getPathToFile());
-        if(numInPl == -1) {
-            File file = new File(b.getPathToFile());
-            AudiobookViewModel.updateNowPlayingFile(new Chapter(file));
-            activityListener.updateTime(b.getTime());
-        } else {
-            Chapter ch = AudiobookViewModel.getPlaylist().getChapters().get(numInPl);
-            ch.setProgress(b.getTime());
-            AudiobookViewModel.updateNowPlayingFile(ch);
-        }
-        activityListener.showBookmarks(false, null);
     }
 
     @Override
     public void onItemClick(View item) {
+        if(actionMode != null) return;
+
         Bookmark bookmark = (Bookmark)item.getTag();
-        openBookmark(bookmark);
+        repository.openBookmark(bookmark);
+        activityListener.showBookmarks(false, null);
     }
 
     @Override
     public void onItemLongClick(View item) {
-        editedView = item;
-        editedView.setBackgroundColor(getActivity().getResources().getColor(R.color.pbBackgroundIncative));
-        editedBookmark = (Bookmark)item.getTag();
         if(actionMode == null) {
+            editedView = item;
+            editedView.setBackgroundColor(getActivity().getResources().getColor(R.color.mocassin));
+            editedBookmark = (Bookmark)item.getTag();
             actionMode = ((AppCompatActivity)getContext()).startSupportActionMode(actionModeCallbacks);
         } else actionMode.finish();
     }
@@ -163,7 +160,6 @@ public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItem
 
         @Override
         public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
-            Log.d(MainActivity.TAG, "BookmarkFragment -> actionModeCallbacks -> onActionItemClicked()");
             switch (item.getItemId()) {
                 case (R.id.contextmenu_bookmarks_change): {
                     showBookmarkRenameDialog();
@@ -180,7 +176,6 @@ public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItem
 
         @Override
         public void onDestroyActionMode(ActionMode mode) {
-            Log.d(MainActivity.TAG, "BookmarkFragment -> actionModeCallbacks -> onDestroyActionMode()");
             actionMode = null;
             if(editedView != null) editedView.setBackground(null);
         }
@@ -189,7 +184,7 @@ public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItem
     private void showBookmarkRenameDialog() {
         RenameDialog dialog = new RenameDialog();
         dialog.setTargetFragment(this, RenameDialog.RENAME_DIALOG_CODE);
-        dialog.show(getActivity().getSupportFragmentManager().beginTransaction(), RenameDialog.RENAME_DIALOG_TAG);
+        dialog.show(getActivity().getSupportFragmentManager(), RenameDialog.RENAME_DIALOG_TAG);
     }
 
     @Override
@@ -197,10 +192,9 @@ public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItem
         switch(requestCode) {
             case RenameDialog.RENAME_DIALOG_CODE: {
                 if (resultCode == Activity.RESULT_OK) {
-                    Log.d(MainActivity.TAG, "BookmarkFragment -> onActivityResult -> RESULT_OK");
                     String newName = data.getStringExtra(RenameDialog.EXTRA_NAME);
                     editBookmarkName(newName);
-                } else if (resultCode == Activity.RESULT_CANCELED){}
+                }
 
                 break;
             }
@@ -209,20 +203,36 @@ public class BookmarkFragment extends Fragment implements BookmarkAdapter.OnItem
 
     private void editBookmarkName(String name) {
         if(editedBookmark != null) {
-            editedBookmark.setName(name);
+            editedBookmark.name = name;
+            exec.execute(new Runnable() {
+                @Override
+                public void run() {
+                    if(editedBookmark.bookmarkId == 0) {
+                        database.bookmarkDao().updateNameByTime(editedBookmark.name, editedBookmark.time, editedBookmark.chId);
+                    } else database.bookmarkDao().update(editedBookmark);
+                }
+            });
             adapter.notifyDataSetChanged();
         }
     }
+
     private void deleteBookmark() {
         if(editedBookmark != null) {
-            Log.d(MainActivity.TAG, "BookmarkFragment -> deleteBookmark(): " + editedBookmark.getName() + ", " + editedBookmark.getTime());
-            int numInPl = AudiobookViewModel.getPlaylist().findInChapters(editedBookmark.getPathToFile());
+            int numInPl = repository.getBook().findInChapters(editedBookmark.pathToFile);
             if(numInPl != -1) {
-                Chapter ch = AudiobookViewModel.getPlaylist().getChapters().get(numInPl);
-                //приходится удалять из двух мест, потому что иначе notifyDataSetChanged() не работает
+                Chapter ch = repository.getBook().chapters.get(numInPl);
+                exec.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        if(editedBookmark.bookmarkId == 0) {
+                            database.bookmarkDao().deleteByTime(editedBookmark.time, editedBookmark.chId);
+                        } else database.bookmarkDao().delete(editedBookmark);
+                    }
+                });
                 ch.deleteBookmark(editedBookmark);
                 bookmarks.remove(editedBookmark);
-                if(ch.getBookmarks().size() == 0) activityListener.onBookmarkInteraction(numInPl);
+                if((ch.bookmarks != null)&&(ch.bookmarks.size() == 0))
+                    activityListener.onBookmarkInteraction(numInPl);
                 adapter.notifyDataSetChanged();
             }
         }

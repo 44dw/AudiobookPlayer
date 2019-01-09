@@ -3,6 +3,7 @@ package com.a44dw.audiobookplayer;
 
 import android.arch.lifecycle.LiveData;
 import android.arch.lifecycle.Observer;
+import android.arch.lifecycle.ViewModelProviders;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -10,15 +11,15 @@ import android.content.IntentFilter;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.constraint.ConstraintLayout;
 import android.support.v4.app.Fragment;
-import android.support.v4.content.ContextCompat;
-import android.util.Log;
 import android.view.LayoutInflater;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -29,111 +30,182 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 
+import static com.a44dw.audiobookplayer.MainActivity.exec;
+
 public class BookScaleFragment extends Fragment implements View.OnClickListener,
                                                            View.OnLongClickListener{
 
     LinearLayout barLayout;
-    ArrayList<ConstraintLayout> barList;
-    LiveData<Chapter> nowPlayingFile;
-    LiveData<String> playlistName;
-    static TextView informChapterTitle;
-    ProgressbarFabric progressbarFabric;
+    ProgressBar infiniteBar;
+    TextView informChapterTitle;
+    HorizontalScrollView barScrollView;
     ConstraintLayout currentBar;
+
+    ArrayList<ConstraintLayout> barList;
+    static ArrayList<Integer> chaptersWithBookmarks;
+    LiveData<Chapter> currentChapter;
+    LiveData<String> currentBookName;
+    ProgressbarFabric progressbarFabric;
     ProgressbarBroadReceiver progressbarReceiver;
-    Handler handler;
+    OnIterationWithActivityListener mActivityListener;
+    Handler bookscaleHandler;
+
+    AudiobookViewModel model;
+    BookRepository repository;
 
     private static final int TEXT_DISAPPEAR_DELAY = 2000;
-
-    public BookScaleFragment() {}
+    private static final int SCROLL_TO_CURRENT_DELAY = 5000;
+    private static final int BAR_VERTICAL_HEIGHT_CONSTANT = 14;
+    private static final int BAR_HORIZONTAL_HEIGHT_CONSTANT = 24;
+    private static final int MESSAGE_BARS_LOADED = 1;
+    private static final int MESSAGE_TEXT_DISAPPEAR = 2;
+    private static final int MESSAGE_SCROLL_TO_CURRENT = 3;
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setRetainInstance(true);
+
+        repository = BookRepository.getInstance();
+
+        currentChapter = repository.getCurrentChapter();
+        currentBookName = repository.getBookName();
     }
 
     @Override
-    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+    public void onAttach(Context c) {
+        super.onAttach(c);
+        if (c instanceof OnIterationWithActivityListener) {
+            mActivityListener = (OnIterationWithActivityListener) c;
+        }
+    }
+
+    @Override
+    public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_bookscale, container, false);
         barLayout = view.findViewById(R.id.progressBarLayout);
-
+        infiniteBar = view.findViewById(R.id.infiniteBar);
+        barScrollView = view.findViewById(R.id.barScrollView);
         informChapterTitle = view.findViewById(R.id.informChapterTitle);
 
-        IntentFilter filter = new IntentFilter(MainActivity.seekBarBroadcastName);
-        progressbarReceiver = new ProgressbarBroadReceiver();
-        getContext().registerReceiver(progressbarReceiver, filter);
+        bookscaleHandler = new BookscaleHandler(this);
+        if(model == null)
+            model = ViewModelProviders.of(getActivity()).get(AudiobookViewModel.class);
 
-        //TODO посомтреть ещё раз, как это работает
-        if(nowPlayingFile == null) {
-            nowPlayingFile = AudiobookViewModel.getNowPlayingFile();
-            nowPlayingFile.observe(getActivity(), new Observer<Chapter>() {
-                @Override
-                public void onChanged(@Nullable Chapter chapter) {
-                    if(barList != null) {
-                        Log.d(MainActivity.TAG, "BookScaleFragment -> nowPlayingFile: onChanged " + chapter);
+        barScrollView.getViewTreeObserver().addOnScrollChangedListener(new ViewTreeObserver.OnScrollChangedListener() {
+            @Override
+            public void onScrollChanged() {
+                bookscaleHandler.removeMessages(MESSAGE_SCROLL_TO_CURRENT);
+                bookscaleHandler.sendEmptyMessageDelayed(MESSAGE_SCROLL_TO_CURRENT, SCROLL_TO_CURRENT_DELAY);
+            }
+        });
+
+        currentChapter.observe(this, new Observer<Chapter>() {
+            @Override
+            public void onChanged(@Nullable Chapter chapter) {
+                if((barList != null)&&(chapter != null)) {
+                    if(chapter.exists()) {
                         currentBar = getCurrentBar();
+                        scrollToCurrent();
                     }
                 }
-            });
-        }
+                if(repository.chapterNumStack.size() > 0) repository.chapterNumStack.clear();
+            }
+        });
 
-        if(playlistName == null) {
-            playlistName = AudiobookViewModel.getPlaylistName();
-            playlistName.observe(getActivity(), new Observer<String>() {
-                @Override
-                public void onChanged(@Nullable String s) {
-                    Log.d(MainActivity.TAG, "BookScaleFragment -> playlistName: onChanged " + s);
-                    drawProgressBars();
-                    //после обновления плейлиста получаем currentBar, потому что в onChanged nowPlayingFile
-                    //он не сработал
-                    currentBar = getCurrentBar();
+        currentBookName.observe(this, new Observer<String>() {
+            @Override
+            public void onChanged(String s) {
+                if(s.length() > 0) drawProgressBars();
+                else {
+                    barLayout.removeAllViews();
+                    currentBar = null;
+                    barList = null;
+                    if(infiniteBar.getVisibility() == View.GONE) infiniteBar.setVisibility(View.VISIBLE);
                 }
-            });
-        }
-
-        handler = new DelHandler(this);
+            }
+        });
 
         return view;
     }
 
     @Override
-    public void onDestroy() {
-        if(handler != null)
-            handler.removeCallbacksAndMessages(null);
+    public void onStart() {
+        super.onStart();
+
+        IntentFilter filter = new IntentFilter(MainActivity.SEEK_BAR_BROADCAST_NAME);
+        progressbarReceiver = new ProgressbarBroadReceiver();
+        getContext().registerReceiver(progressbarReceiver, filter);
+
+        if(repository.chapterNumStack.size() > 0) {
+            Book book = repository.getBook();
+            for(int n : repository.chapterNumStack) {
+                ProgressBar pb = barList.get(n).findViewById(R.id.progressbar);
+                pb.setProgress((int)book.chapters.get(n).progress);
+                if(book.chapters.get(n).done)
+                    if(isAdded()) pb.setProgressDrawable(getResources().getDrawable(R.drawable.progress_drawable_done));
+                else
+                    if(isAdded()) pb.setProgressDrawable(getResources().getDrawable(R.drawable.progress_drawable));
+            }
+        }
+        setCurrentProgress(repository.getNowPlayingPosition());
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        if(bookscaleHandler != null)
+            bookscaleHandler.removeCallbacksAndMessages(null);
         getContext().unregisterReceiver(progressbarReceiver);
-        super.onDestroy();
     }
 
     private void drawProgressBars() {
-        if(progressbarFabric == null) {
-            progressbarFabric = new ProgressbarFabric(getActivity());
-        }
+        if(infiniteBar.getVisibility() == View.GONE) infiniteBar.setVisibility(View.VISIBLE);
+        if(progressbarFabric == null) progressbarFabric = new ProgressbarFabric(getActivity(), getBarMetrics());
         //очищаем layout, если там что-то было нарисовано
         if(barLayout.getChildCount() > 0) barLayout.removeAllViews();
+        //очищаем barList, чтобы не сработал nowPlayingFile onChanged()
+        if(barList != null) barList = null;
         progressbarFabric.setInterval(getDurationInterval());
-        barList = getChapterScales();
-        ArrayList<Integer> chaptersWithBookmarks = getChaptersWithBookmarks();
-        int iterator = 1;
-        for(ConstraintLayout bar : barList) {
-            TextView num = bar.findViewById(R.id.progressbarText);
-            num.setText(String.valueOf(iterator++));
-            barLayout.addView(bar);
-        }
-        if(chaptersWithBookmarks.size() > 0) {
-            for(int i : chaptersWithBookmarks) {
-                ConstraintLayout bar = (ConstraintLayout) barLayout.getChildAt(i);
-                ImageView bookmark = bar.findViewById(R.id.progressbarBookmark);
-                bookmark.setVisibility(View.VISIBLE);
+        exec.execute(new Runnable() {
+            @Override
+            public void run() {
+                barList = getChapterScales();
+                chaptersWithBookmarks = getChaptersWithBookmarks();
+                bookscaleHandler.sendEmptyMessage(MESSAGE_BARS_LOADED);
+            }
+        });
+    }
+
+    private void addBookmark(int num) {
+        ConstraintLayout bar = (ConstraintLayout) barLayout.getChildAt(num);
+        ImageView bookmark = bar.findViewById(R.id.progressbarBookmark);
+        bookmark.setVisibility(View.VISIBLE);
+    }
+
+    private int[] getBarMetrics() {
+        int[] displayMetrics = mActivityListener.getDisplayMetrics();
+
+        int orientation = getResources().getConfiguration().orientation;
+        int[] result;
+        switch (orientation) {
+            case 1: {
+                result = new int[] {displayMetrics[0]/10, ((displayMetrics[1]/100) * BAR_VERTICAL_HEIGHT_CONSTANT)};
+                break;
+            }
+            default: {
+                result = new int[] {displayMetrics[0]/15, ((displayMetrics[1]/100) * BAR_HORIZONTAL_HEIGHT_CONSTANT)};
+                break;
             }
         }
+        return result;
     }
 
     private ArrayList<Integer> getChaptersWithBookmarks() {
         ArrayList<Integer> result = new ArrayList<>();
-        ArrayList<Chapter> pl = AudiobookViewModel.getPlaylist().getChapters();
+        ArrayList<Chapter> pl = repository.getBook().chapters;
         for(int i=0; i<pl.size(); i++) {
-            ArrayList<Bookmark> bookmarkList = pl.get(i).getBookmarks();
+            ArrayList<Bookmark> bookmarkList = pl.get(i).bookmarks;
             if(bookmarkList != null) {
                 if(bookmarkList.size() > 0) result.add(i);
             }
@@ -142,12 +214,10 @@ public class BookScaleFragment extends Fragment implements View.OnClickListener,
     }
 
     private ArrayList<ConstraintLayout> getChapterScales() {
-        Log.d(MainActivity.TAG, "BookScaleFragment -> getChapterScales");
         ArrayList<ConstraintLayout> barList = new ArrayList<>();
-        ArrayList<Chapter> pl = AudiobookViewModel.getPlaylist().getChapters();
+        ArrayList<Chapter> pl = repository.getBook().chapters;
         for(int i=0; i<pl.size(); i++) {
             ConstraintLayout bar = progressbarFabric.getBar(pl.get(i));
-            //вешаем в качестве тэга номер в playlist
             bar.setTag(i);
             bar.setOnClickListener(this);
             bar.setOnLongClickListener(this);
@@ -159,54 +229,53 @@ public class BookScaleFragment extends Fragment implements View.OnClickListener,
     private Long[] getDurationInterval() {
         ArrayList<Long> durationList = new ArrayList<>();
 
-        ArrayList<Chapter> pl = AudiobookViewModel.getPlaylist().getChapters();
-        Log.d(MainActivity.TAG, "BookScaleFragment -> getDurationInterval: playlist length is " + pl.size());
+        ArrayList<Chapter> pl = repository.getBook().chapters;
 
         for(Chapter chapter : pl) {
-        durationList.add(chapter.getDuration());
+            durationList.add(chapter.duration);
         }
-        Log.d(MainActivity.TAG, "BookScaleFragment -> getDurationInterval: " + Collections.min(durationList) + " to " + Collections.max(durationList));
 
         return new Long[] {Collections.min(durationList), Collections.max(durationList)};
     }
 
     public ConstraintLayout getCurrentBar() {
-        Log.d(MainActivity.TAG, "BookScaleFragment -> getCurrentBar");
         if(currentBar != null) {
             ProgressBar oldBar = currentBar.findViewById(R.id.progressbar);
-            Log.d(MainActivity.TAG, "BookScaleFragment -> getCurrentBar: oldBar.getProgress() " + oldBar.getProgress());
-            Log.d(MainActivity.TAG, "BookScaleFragment -> getCurrentBar: oldBar.getMax() " + oldBar.getMax());
-            if(oldBar.getProgress() > oldBar.getMax() - AudiobookViewModel.GAP) oldBar.setProgressDrawable(ContextCompat.getDrawable(getContext(), R.drawable.progress_drawable_done));
-            else oldBar.setProgressDrawable(ContextCompat.getDrawable(getContext(), R.drawable.progress_drawable));
+            Book nowBook = repository.getBook();
+            int oldChapterProgress = (int)(nowBook.chapters.get(nowBook.lastPlayedChapterNum).progress);
+            if(oldBar.getProgress() < oldChapterProgress) oldBar.setProgress(oldChapterProgress);
+            if(oldBar.getProgress() > oldBar.getMax() - BookRepository.GAP) {
+                if(isAdded()) oldBar.setProgressDrawable(getResources().getDrawable(R.drawable.progress_drawable_done));
+            }
+            else {
+                if(isAdded()) oldBar.setProgressDrawable(getResources().getDrawable(R.drawable.progress_drawable));
+            }
         }
-        int num = AudiobookViewModel.getNowPlayingFileNumber();
+        int num = repository.getNowPlayingChapterNumber();
         ConstraintLayout b = barList.get(num);
         ProgressBar pbar = b.findViewById(R.id.progressbar);
-        pbar.setProgressDrawable(ContextCompat.getDrawable(getContext(), R.drawable.progress_drawable_active));
+        if(isAdded()) pbar.setProgressDrawable(getResources().getDrawable(R.drawable.progress_drawable_active));
         return b;
     }
 
     public void playChapter(Chapter ch) {
-        Log.d(MainActivity.TAG, "BookScaleFragment -> playChapter: " + ch.getFile().toString());
-        AudiobookViewModel.updateNowPlayingFile(ch);
+        repository.updateCurrentChapter(ch);
     }
 
     @Override
     public void onClick(View v) {
-        Log.d(MainActivity.TAG, "BookScaleFragment -> onClick");
         ConstraintLayout bar = (ConstraintLayout) v;
-        Chapter ch = AudiobookViewModel.getPlaylist().getChapters().get((int)bar.getTag());
+        Chapter ch = repository.getBook().chapters.get((int)bar.getTag());
         playChapter(ch);
     }
 
     @Override
     public boolean onLongClick(View v) {
-        Log.d(MainActivity.TAG, "BookScaleFragment -> onLongClick on bar");
-        Chapter ch = AudiobookViewModel.getPlaylist().getChapters().get((int)v.getTag());
-        informChapterTitle.setText(ch.getChapter());
+        Chapter ch = repository.getBook().chapters.get((int)v.getTag());
+        informChapterTitle.setText(ch.chapter == null ? new File(ch.filepath).getName() : ch.chapter);
 
-        handler.removeMessages(0);
-        handler.sendEmptyMessageDelayed(0, TEXT_DISAPPEAR_DELAY);
+        bookscaleHandler.removeMessages(MESSAGE_TEXT_DISAPPEAR);
+        bookscaleHandler.sendEmptyMessageDelayed(MESSAGE_TEXT_DISAPPEAR, TEXT_DISAPPEAR_DELAY);
 
         return true;
     }
@@ -225,23 +294,41 @@ public class BookScaleFragment extends Fragment implements View.OnClickListener,
     public class ProgressbarBroadReceiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
-            int position = intent.getIntExtra(MainActivity.playbackStatus, 0);
+            int position = intent.getIntExtra(MainActivity.PLAYBACK_STATUS, 0);
             if(currentBar != null) {
-                ProgressBar pbar = currentBar.findViewById(R.id.progressbar);
-                pbar.setProgress(position);
+                if(!model.userIsSeeking) setCurrentProgress(position);
             }
+        }
+    }
+
+    public void setCurrentProgress(int position) {
+        if(currentBar != null) {
+            ProgressBar pbar = currentBar.findViewById(R.id.progressbar);
+            pbar.setProgress(position);
         }
     }
 
     private void clearInformChapterTitle() {
         informChapterTitle.setText("");
-        handler.sendEmptyMessageDelayed(0, TEXT_DISAPPEAR_DELAY);
     }
 
-    static class DelHandler extends Handler {
+    private void scrollToCurrent() {
+        barScrollView.post(new Runnable() {
+            @Override
+            public void run() {
+                int displayWidth = mActivityListener.getDisplayMetrics()[0];
+                if(currentBar != null) {
+                    int position = currentBar.getLeft() - displayWidth/2;
+                    barScrollView.smoothScrollTo(position, 0);
+                }
+            }
+        });
+    }
+
+    static class BookscaleHandler extends Handler {
         WeakReference<BookScaleFragment> wrFragment;
 
-        public DelHandler(BookScaleFragment fragment) {
+        BookscaleHandler(BookScaleFragment fragment) {
             wrFragment = new WeakReference<>(fragment);
         }
 
@@ -249,8 +336,35 @@ public class BookScaleFragment extends Fragment implements View.OnClickListener,
         public void handleMessage(Message msg) {
             super.handleMessage(msg);
             BookScaleFragment fragment = wrFragment.get();
-            if (fragment != null)
-                fragment.clearInformChapterTitle();
+            switch (msg.what) {
+                case MESSAGE_TEXT_DISAPPEAR: {
+                    if (fragment != null) fragment.clearInformChapterTitle();
+                    break;
+                }
+                case MESSAGE_SCROLL_TO_CURRENT: {
+                    if (fragment != null) fragment.scrollToCurrent();
+                    break;
+                }
+                case MESSAGE_BARS_LOADED: {
+                    if(fragment != null) {
+                        fragment.infiniteBar.setVisibility(View.GONE);
+                        int iterator = 1;
+                        for(ConstraintLayout bar : fragment.barList) {
+                            UpdatedProgressBar scale = bar.findViewById(R.id.progressbar);
+                            scale.setNumber(iterator++);
+                            fragment.barLayout.addView(bar);
+                        }
+                        if(chaptersWithBookmarks.size() > 0) {
+                            for(int i : chaptersWithBookmarks) {
+                                fragment.addBookmark(i);
+                            }
+                        }
+                        fragment.currentBar = fragment.getCurrentBar();
+                        fragment.scrollToCurrent();
+                    }
+                    break;
+                }
+            }
         }
     }
 }
