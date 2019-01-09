@@ -1,9 +1,9 @@
 Snail Audiobook Player
 =========
 
-![screenshot](screen1.jpg)
-![screenshot](screen2.jpg)
-![screenshot](screen3.jpg)
+![screenshot](screen1.png)
+![screenshot](screen2.png)
+![screenshot](screen3.png)
 
 Приложение для прослушивания аудиокниг и лекций
 
